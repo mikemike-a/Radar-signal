@@ -1145,7 +1145,13 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
                     KnownDeviceRow(
                         device = device,
                         onDelete = { viewModel.deleteKnownDevice(device) },
-                        onStartHunt = { viewModel.startHunting(mockDevice) }
+                        onStartHunt = { viewModel.startHunting(mockDevice) },
+                        onToggleArrival = { enabled ->
+                            viewModel.updateKnownDeviceNotifications(device, notifyArrival = enabled, notifyDeparture = device.notifyOnDeparture)
+                        },
+                        onToggleDeparture = { enabled ->
+                            viewModel.updateKnownDeviceNotifications(device, notifyArrival = device.notifyOnArrival, notifyDeparture = enabled)
+                        }
                     )
                 }
             }
@@ -1323,74 +1329,123 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
 fun KnownDeviceRow(
     device: KnownDevice,
     onDelete: () -> Unit,
-    onStartHunt: () -> Unit
+    onStartHunt: () -> Unit,
+    onToggleArrival: (Boolean) -> Unit,
+    onToggleDeparture: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
         border = BorderStroke(1.dp, CardBorder)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(14.dp)
         ) {
-            Icon(
-                imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
-                contentDescription = null,
-                tint = NeonGreen,
-                modifier = Modifier.size(24.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                    contentDescription = null,
+                    tint = NeonGreen,
+                    modifier = Modifier.size(24.dp)
+                )
 
-            Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(14.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = device.alias,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .background(NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (device.floor == 0) "RDC" else "Étage ${device.floor}",
-                            fontSize = 9.sp,
-                            color = NeonCyan,
-                            fontWeight = FontWeight.Bold
+                            text = device.alias,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (device.floor == 0) "RDC" else "Étage ${device.floor}",
+                                fontSize = 9.sp,
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Identifiant: ${device.identifier}",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onStartHunt) {
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "Chasser l'appareil",
+                            tint = NeonGreen
+                        )
+                    }
+
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Supprimer",
+                            tint = WarmRed.copy(alpha = 0.8f)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Identifiant: ${device.identifier}",
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onStartHunt) {
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = CardBorder, thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Notification preferences row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.MyLocation,
-                        contentDescription = "Chasser l'appareil",
-                        tint = NeonGreen
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = null,
+                        tint = NeonCyan,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Alerte Entrée", fontSize = 11.sp, color = TextSecondary)
+                    Switch(
+                        checked = device.notifyOnArrival,
+                        onCheckedChange = onToggleArrival,
+                        modifier = Modifier.scale(0.6f)
                     )
                 }
 
-                IconButton(onClick = onDelete) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Supprimer",
-                        tint = WarmRed.copy(alpha = 0.8f)
+                        imageVector = Icons.Default.NotificationsOff,
+                        contentDescription = null,
+                        tint = WarmRed,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Alerte Sortie", fontSize = 11.sp, color = TextSecondary)
+                    Switch(
+                        checked = device.notifyOnDeparture,
+                        onCheckedChange = onToggleDeparture,
+                        modifier = Modifier.scale(0.6f)
                     )
                 }
             }
@@ -2097,6 +2152,13 @@ fun HistoryLogCard(log: HistoryEntry) {
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
+                if (log.latitude != null && log.longitude != null) {
+                    Text(
+                        text = String.format("📍 GPS: %.4f, %.4f", log.latitude, log.longitude),
+                        fontSize = 10.sp,
+                        color = NeonCyan
+                    )
+                }
             }
 
             Column(horizontalAlignment = Alignment.End) {

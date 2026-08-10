@@ -224,7 +224,14 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     }
 
     // Known device actions
-    fun addKnownDevice(identifier: String, alias: String, type: String, floor: Int = 0) {
+    fun addKnownDevice(
+        identifier: String,
+        alias: String,
+        type: String,
+        floor: Int = 0,
+        notifyOnArrival: Boolean = true,
+        notifyOnDeparture: Boolean = true
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.insertKnownDevice(
                 KnownDevice(
@@ -232,7 +239,20 @@ class RadarViewModel(private val context: Context) : ViewModel() {
                     alias = alias.trim(),
                     type = type,
                     rssiThreshold = _rssiThreshold.value,
-                    floor = floor
+                    floor = floor,
+                    notifyOnArrival = notifyOnArrival,
+                    notifyOnDeparture = notifyOnDeparture
+                )
+            )
+        }
+    }
+
+    fun updateKnownDeviceNotifications(device: KnownDevice, notifyArrival: Boolean, notifyDeparture: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.insertKnownDevice(
+                device.copy(
+                    notifyOnArrival = notifyArrival,
+                    notifyOnDeparture = notifyDeparture
                 )
             )
         }
