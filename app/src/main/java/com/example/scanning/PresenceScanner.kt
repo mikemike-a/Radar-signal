@@ -15,6 +15,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationManager
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
@@ -66,8 +68,12 @@ class PresenceScanner(
     private var bleScanner: BluetoothLeScanner? = null
 
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private val activeNsdListeners = mutableListOf<Pair<String, NsdManager.DiscoveryListener>>()
 
     // Settings (updated dynamically from ViewModel/Preferences)
     var rssiThreshold = -95
@@ -141,10 +147,27 @@ class PresenceScanner(
 
         if (rssi < rssiThreshold) return
 
+        // Check for SOS emergency beacon service UUID
+        val serviceUuids = result.scanRecord?.serviceUuids
+        val isEmergencyBeacon = serviceUuids?.any {
+            it.uuid.toString().startsWith("00005050", ignoreCase = true)
+        } ?: false
+
         // Match either MAC or Name
-        val known = knownDevicesList.find {
-            it.identifier.equals(mac, ignoreCase = true) ||
-                    (name != null && it.identifier.equals(name, ignoreCase = true))
+        val known = if (isEmergencyBeacon) {
+            // Automatically make it a known high-importance target for tracking
+            com.example.data.KnownDevice(
+                identifier = mac,
+                alias = "Balise de Détresse 🚨",
+                type = "SOS",
+                notifyOnArrival = true,
+                notifyOnDeparture = true
+            )
+        } else {
+            knownDevicesList.find {
+                it.identifier.equals(mac, ignoreCase = true) ||
+                        (name != null && it.identifier.equals(name, ignoreCase = true))
+            }
         }
 
         val identifier = known?.identifier ?: mac
@@ -155,9 +178,9 @@ class PresenceScanner(
 
         val updatedDevice = DetectedDevice(
             identifier = identifier,
-            name = name,
+            name = if (isEmergencyBeacon) "🚨 Balise de Détresse SOS 🚨" else name,
             rssi = rssi,
-            type = "BLE",
+            type = if (isEmergencyBeacon) "SOS" else "BLE",
             lastSeen = now,
             isKnown = known != null,
             alias = known?.alias
@@ -165,8 +188,16 @@ class PresenceScanner(
 
         activeDevicesMap[identifier] = updatedDevice
 
-        if (isNewArrival && known != null) {
-            triggerArrival(known)
+        if (isNewArrival) {
+            if (isEmergencyBeacon) {
+                sendPresenceNotification(
+                    notificationId = mac.hashCode(),
+                    title = "🚨 ALERTE DE SAUVETAGE 🚨",
+                    message = "Une balise de détresse SOS émet à proximité ! Force du signal : $rssi dBm."
+                )
+            } else if (known != null) {
+                triggerArrival(known)
+            }
         }
 
         publishDevices()
@@ -219,6 +250,144 @@ class PresenceScanner(
             }
         }
         publishDevices()
+    }
+
+    // Network Service Discovery (mDNS / Bonjour / AirPlay / Chromecast / UPnP)
+    private fun handleNsdDiscovered(serviceName: String, serviceType: String, hostAddress: String? = null) {
+        if (serviceName.isBlank()) return
+        val now = System.currentTimeMillis()
+
+        // Match against known devices (by name, identifier, or alias)
+        val known = knownDevicesList.find {
+            it.identifier.equals(serviceName, ignoreCase = true) ||
+                    (hostAddress != null && it.identifier.equals(hostAddress, ignoreCase = true)) ||
+                    it.alias.equals(serviceName, ignoreCase = true)
+        }
+
+        val identifier = known?.identifier ?: serviceName
+        val existing = activeDevicesMap[identifier]
+        val isNewArrival = existing == null
+
+        // Default RSSI for local subnet Wi-Fi mDNS (~ -58 dBm)
+        val rssi = -58
+
+        val updatedDevice = DetectedDevice(
+            identifier = identifier,
+            name = serviceName,
+            rssi = rssi,
+            type = "MDNS",
+            lastSeen = now,
+            isKnown = known != null,
+            alias = known?.alias
+        )
+
+        activeDevicesMap[identifier] = updatedDevice
+
+        if (isNewArrival && known != null) {
+            triggerArrival(known)
+        }
+
+        publishDevices()
+    }
+
+    private fun acquireMulticastLock() {
+        try {
+            if (multicastLock == null) {
+                multicastLock = wifiManager?.createMulticastLock("PresenceRadarMulticast")
+                multicastLock?.setReferenceCounted(true)
+            }
+            if (multicastLock?.isHeld == false) {
+                multicastLock?.acquire()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error acquiring multicast lock", e)
+        }
+    }
+
+    private fun releaseMulticastLock() {
+        try {
+            if (multicastLock?.isHeld == true) {
+                multicastLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing multicast lock", e)
+        }
+    }
+
+    private fun startNsdDiscovery() {
+        val nsd = nsdManager ?: return
+        acquireMulticastLock()
+
+        val serviceTypes = listOf(
+            "_airplay._tcp.",
+            "_googlecast._tcp.",
+            "_companion-link._tcp.",
+            "_http._tcp.",
+            "_workstation._tcp.",
+            "_spotify-connect._tcp."
+        )
+
+        serviceTypes.forEach { serviceType ->
+            val listener = object : NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(regType: String) {
+                    Log.d(TAG, "NSD Discovery started for $regType")
+                }
+
+                override fun onServiceFound(service: NsdServiceInfo) {
+                    Log.d(TAG, "NSD Service found: ${service.serviceName} (${service.serviceType})")
+                    handleNsdDiscovered(service.serviceName, service.serviceType)
+
+                    try {
+                        nsd.resolveService(service, object : NsdManager.ResolveListener {
+                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+                            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                                val host = serviceInfo.host?.hostAddress
+                                handleNsdDiscovered(serviceInfo.serviceName, serviceInfo.serviceType, host)
+                            }
+                        })
+                    } catch (e: Exception) {
+                        // NsdManager may throw if resolve is busy
+                    }
+                }
+
+                override fun onServiceLost(service: NsdServiceInfo) {
+                    Log.d(TAG, "NSD Service lost: ${service.serviceName}")
+                }
+
+                override fun onDiscoveryStopped(serviceType: String) {
+                    Log.d(TAG, "NSD Discovery stopped for $serviceType")
+                }
+
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    Log.e(TAG, "NSD Start discovery failed for $serviceType: $errorCode")
+                    try { nsd.stopServiceDiscovery(this) } catch (e: Exception) {}
+                }
+
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    Log.e(TAG, "NSD Stop discovery failed for $serviceType: $errorCode")
+                }
+            }
+
+            try {
+                nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+                activeNsdListeners.add(serviceType to listener)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start NSD for $serviceType", e)
+            }
+        }
+    }
+
+    private fun stopNsdDiscovery() {
+        val nsd = nsdManager ?: return
+        activeNsdListeners.forEach { (type, listener) ->
+            try {
+                nsd.stopServiceDiscovery(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping NSD discovery for $type", e)
+            }
+        }
+        activeNsdListeners.clear()
+        releaseMulticastLock()
     }
 
     private fun getLastKnownLocation(): Location? {
@@ -339,6 +508,9 @@ class PresenceScanner(
         // Initialize BLE scanner
         bleScanner = bluetoothAdapter?.bluetoothLeScanner
 
+        // Start mDNS / Bonjour discovery
+        startNsdDiscovery()
+
         // Start active scanning jobs
         scanJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -401,6 +573,7 @@ class PresenceScanner(
         pruneJob = null
 
         stopBleScan()
+        stopNsdDiscovery()
 
         try {
             context.unregisterReceiver(wifiScanReceiver)

@@ -1101,7 +1101,7 @@ fun FullScreenRadarDialog(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                        imageVector = if (device.type == "WIFI" || device.type == "MDNS") Icons.Default.Wifi else Icons.Default.Bluetooth,
                                         contentDescription = null,
                                         tint = NeonGreen,
                                         modifier = Modifier.size(20.dp)
@@ -1188,11 +1188,19 @@ fun DetectedDeviceCard(
     val currentFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
     val savedKnown = knownDevices.find { it.identifier == device.identifier }
     val savedFloor = savedKnown?.floor
+    val isSos = device.type == "SOS"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        border = BorderStroke(1.dp, if (device.isKnown) NeonGreen.copy(alpha = 0.4f) else CardBorder),
+        border = BorderStroke(
+            1.dp,
+            when {
+                isSos -> WarmRed.copy(alpha = 0.8f)
+                device.isKnown -> NeonGreen.copy(alpha = 0.4f)
+                else -> CardBorder
+            }
+        ),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
@@ -1206,19 +1214,24 @@ fun DetectedDeviceCard(
                 modifier = Modifier
                     .size(44.dp)
                     .background(
-                        color = if (device.isKnown) NeonGreen.copy(alpha = 0.1f) else CardBorder,
+                        color = when {
+                            isSos -> WarmRed.copy(alpha = 0.2f)
+                            device.isKnown -> NeonGreen.copy(alpha = 0.1f)
+                            else -> CardBorder
+                        },
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = when {
-                        device.type == "WIFI" -> Icons.Default.Wifi
+                        isSos -> Icons.Default.Warning
+                        device.type == "WIFI" || device.type == "MDNS" -> Icons.Default.Wifi
                         device.isKnown -> Icons.Default.Devices
                         else -> Icons.Default.Bluetooth
                     },
                     contentDescription = null,
-                    tint = if (device.isKnown) NeonGreen else TextSecondary,
+                    tint = if (isSos) WarmRed else if (device.isKnown) NeonGreen else TextSecondary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -1236,7 +1249,21 @@ fun DetectedDeviceCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (device.isKnown) {
+                    if (isSos) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(WarmRed.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "DETRESSE",
+                                fontSize = 9.sp,
+                                color = WarmRed,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else if (device.isKnown) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
@@ -2028,7 +2055,7 @@ fun HuntScreen(viewModel: RadarViewModel) {
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
-                                            imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                            imageVector = if (device.type == "WIFI" || device.type == "MDNS") Icons.Default.Wifi else Icons.Default.Bluetooth,
                                             tint = if (device.isKnown) NeonGreen else TextSecondary,
                                             contentDescription = null,
                                             modifier = Modifier.size(20.dp)
@@ -2073,7 +2100,7 @@ fun HuntScreen(viewModel: RadarViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                imageVector = if (device.type == "WIFI" || device.type == "MDNS") Icons.Default.Wifi else Icons.Default.Bluetooth,
                                 contentDescription = null,
                                 tint = NeonGreen,
                                 modifier = Modifier.size(22.dp)
@@ -2512,6 +2539,19 @@ fun SettingsScreen(viewModel: RadarViewModel) {
     val departureSecs by viewModel.departureDelaySec.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
+    // Emergency SOS Beacon state collections
+    val isBeaconActive by viewModel.isBeaconActive.collectAsStateWithLifecycle()
+    val isMonitoringInactivity by viewModel.isMonitoringInactivity.collectAsStateWithLifecycle()
+    val countdownRemaining by viewModel.countdownSecondsRemaining.collectAsStateWithLifecycle()
+    val inactivityProgress by viewModel.lastInactivityProgress.collectAsStateWithLifecycle()
+
+    var selectedCountdownSecs by remember { mutableStateOf(30) } // default 30s
+    var selectedInactivitySecs by remember { mutableStateOf(30) } // default 30s
+
+    var soundEnabled by remember { mutableStateOf(viewModel.isBeaconSoundEnabled) }
+    var flashlightEnabled by remember { mutableStateOf(viewModel.isBeaconFlashlightEnabled) }
+    var bleEnabled by remember { mutableStateOf(viewModel.isBeaconBleEnabled) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -2638,6 +2678,363 @@ fun SettingsScreen(viewModel: RadarViewModel) {
                             border = BorderStroke(1.dp, WarmRed)
                         ) {
                             Text("Alerte Anti-Oubli 🚨", color = WarmRed, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section Balise d'Urgence SOS (Sauvetage)
+        item {
+            val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "sos_pulse")
+            val pulseAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.4f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(800, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "pulse_alpha"
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = BorderStroke(
+                    1.dp,
+                    if (isBeaconActive) WarmRed.copy(alpha = pulseAlpha) else if (isMonitoringInactivity || countdownRemaining > 0) OrangeAccent else CardBorder
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = if (isBeaconActive) WarmRed else if (isMonitoringInactivity || countdownRemaining > 0) OrangeAccent else TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Balise de Détresse SOS",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = if (isBeaconActive) "ÉMISSION ACTIVE 🚨" else if (countdownRemaining > 0) "ARMEMENT EN COURS... ⏳" else if (isMonitoringInactivity) "SURVEILLANCE ACTIVÉE 📡" else "Inactif",
+                                    fontSize = 11.sp,
+                                    color = if (isBeaconActive) WarmRed else if (countdownRemaining > 0 || isMonitoringInactivity) OrangeAccent else TextSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Badges/Status indicator
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (isBeaconActive) WarmRed.copy(alpha = 0.2f)
+                                    else if (countdownRemaining > 0 || isMonitoringInactivity) OrangeAccent.copy(alpha = 0.2f)
+                                    else CardBorder
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Sauvetage",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBeaconActive) WarmRed else if (countdownRemaining > 0 || isMonitoringInactivity) OrangeAccent else TextSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Permet à l'appareil d'émettre des signaux radio continus, d'activer un signal sonore puissant et de faire clignoter le flash en SOS s'il est perdu ou dans des décombres.",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Banners / Dynamic states
+                    if (isBeaconActive) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(WarmRed.copy(alpha = 0.15f * pulseAlpha))
+                                .border(1.dp, WarmRed.copy(alpha = pulseAlpha), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "🚨 BALISE ACTIVE ET ÉMETTRICE 🚨",
+                                    color = WarmRed,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Vos flashs, sirène et signaux Bluetooth (BLE) SOS s'exécutent en boucle.",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { viewModel.stopBeacon() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = WarmRed),
+                                    modifier = Modifier.fillMaxWidth().testTag("stop_sos_beacon_button")
+                                ) {
+                                    Text("ARRÊTER LA BALISE", color = TextPrimary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else if (countdownRemaining > 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OrangeAccent.copy(alpha = 0.15f))
+                                .border(1.dp, OrangeAccent, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "⚠️ ACTIVATION DE LA BALISE DANS",
+                                    color = OrangeAccent,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = "$countdownRemaining SECONDES",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 24.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = { viewModel.cancelBeaconCountdown() },
+                                    border = BorderStroke(1.dp, OrangeAccent),
+                                    modifier = Modifier.fillMaxWidth().testTag("cancel_sos_countdown_button")
+                                ) {
+                                    Text("ANNULER LE MINUTEUR", color = OrangeAccent)
+                                }
+                            }
+                        }
+                    } else if (isMonitoringInactivity) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(NeonCyan.copy(alpha = 0.15f))
+                                .border(1.dp, NeonCyan, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "📡 SURVEILLANCE D'INACTIVITÉ ACTIVE",
+                                        color = NeonCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        text = "${(inactivityProgress * 100).toInt()}%",
+                                        color = NeonCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LinearProgressIndicator(
+                                    progress = inactivityProgress,
+                                    color = NeonCyan,
+                                    trackColor = CardBorder,
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "La balise s'activera s'il n'y a aucun mouvement pendant la période définie (bougez le téléphone pour réinitialiser le compteur).",
+                                    color = TextSecondary,
+                                    fontSize = 10.sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = { viewModel.stopInactivityMonitoring() },
+                                    border = BorderStroke(1.dp, NeonCyan),
+                                    modifier = Modifier.fillMaxWidth().testTag("stop_inactivity_monitoring_button")
+                                ) {
+                                    Text("ANNULER LA SURVEILLANCE", color = NeonCyan)
+                                }
+                            }
+                        }
+                    } else {
+                        // Configuration Panel
+                        Column {
+                            // Toggles Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Sound Switch
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = Icons.Default.VolumeUp,
+                                        contentDescription = null,
+                                        tint = if (soundEnabled) NeonGreen else TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Sirène 🔊", fontSize = 10.sp, color = TextPrimary)
+                                    Switch(
+                                        checked = soundEnabled,
+                                        onCheckedChange = {
+                                            soundEnabled = it
+                                            viewModel.isBeaconSoundEnabled = it
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen),
+                                        modifier = Modifier.scale(0.8f).testTag("beacon_sound_toggle")
+                                    )
+                                }
+                                // Flashlight Switch
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lightbulb,
+                                        contentDescription = null,
+                                        tint = if (flashlightEnabled) NeonGreen else TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Flash 🔦", fontSize = 10.sp, color = TextPrimary)
+                                    Switch(
+                                        checked = flashlightEnabled,
+                                        onCheckedChange = {
+                                            flashlightEnabled = it
+                                            viewModel.isBeaconFlashlightEnabled = it
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen),
+                                        modifier = Modifier.scale(0.8f).testTag("beacon_flashlight_toggle")
+                                    )
+                                }
+                                // BLE Switch
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Bluetooth,
+                                        contentDescription = null,
+                                        tint = if (bleEnabled) NeonGreen else TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Radio BLE 📡", fontSize = 10.sp, color = TextPrimary)
+                                    Switch(
+                                        checked = bleEnabled,
+                                        onCheckedChange = {
+                                            bleEnabled = it
+                                            viewModel.isBeaconBleEnabled = it
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen),
+                                        modifier = Modifier.scale(0.8f).testTag("beacon_ble_toggle")
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Action buttons & custom Sliders
+                            // 1. Immediate trigger
+                            Button(
+                                onClick = { viewModel.activateBeaconImmediately() },
+                                colors = ButtonDefaults.buttonColors(containerColor = WarmRed),
+                                modifier = Modifier.fillMaxWidth().testTag("activate_sos_beacon_button")
+                            ) {
+                                Text("🔴 ACTIVER LA BALISE IMMÉDIATEMENT", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider(color = CardBorder)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // 2. Countdown trigger options
+                            Text(
+                                text = "Déclenchement Retardé (Compte à Rebours)",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (selectedCountdownSecs >= 60) "${selectedCountdownSecs / 60} min" else "$selectedCountdownSecs s",
+                                    color = NeonGreen,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                OutlinedButton(
+                                    onClick = { viewModel.startCountdownBeacon(selectedCountdownSecs) },
+                                    border = BorderStroke(1.dp, NeonGreen),
+                                    modifier = Modifier.height(32.dp).testTag("start_countdown_button"),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("Lancer", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Slider(
+                                value = selectedCountdownSecs.toFloat(),
+                                onValueChange = { selectedCountdownSecs = it.toInt() },
+                                valueRange = 10f..300f,
+                                steps = 29, // steps of 10s
+                                colors = SliderDefaults.colors(activeTrackColor = NeonGreen, thumbColor = NeonGreen)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 3. Inactivity trigger options
+                            Text(
+                                text = "Activer s'il n'y a plus aucun mouvement (Béton/Décombres)",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (selectedInactivitySecs >= 60) "${selectedInactivitySecs / 60} min" else "$selectedInactivitySecs s",
+                                    color = NeonCyan,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                OutlinedButton(
+                                    onClick = { viewModel.startInactivityMonitoring(selectedInactivitySecs) },
+                                    border = BorderStroke(1.dp, NeonCyan),
+                                    modifier = Modifier.height(32.dp).testTag("start_inactivity_button"),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("Surveiller", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Slider(
+                                value = selectedInactivitySecs.toFloat(),
+                                onValueChange = { selectedInactivitySecs = it.toInt() },
+                                valueRange = 10f..300f,
+                                steps = 29, // steps of 10s
+                                colors = SliderDefaults.colors(activeTrackColor = NeonCyan, thumbColor = NeonCyan)
+                            )
                         }
                     }
                 }

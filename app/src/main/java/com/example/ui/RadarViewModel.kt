@@ -422,9 +422,53 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     }
 
     override fun onCleared() {
+        _beaconManager.onDestroy()
         unbindPresenceService()
         sensorManager?.unregisterListener(pressureListener)
         super.onCleared()
+    }
+
+    // --- EMERGENCY SOS BEACON ---
+    private val _beaconManager = com.example.service.EmergencyBeaconManager(context)
+    val isBeaconActive = _beaconManager.isBeaconActive
+    val isMonitoringInactivity = _beaconManager.isMonitoringInactivity
+    val countdownSecondsRemaining = _beaconManager.countdownSecondsRemaining
+    val lastInactivityProgress = _beaconManager.lastInactivityProgress
+
+    var isBeaconSoundEnabled: Boolean
+        get() = _beaconManager.isSoundEnabled
+        set(value) { _beaconManager.isSoundEnabled = value }
+
+    var isBeaconFlashlightEnabled: Boolean
+        get() = _beaconManager.isFlashlightEnabled
+        set(value) { _beaconManager.isFlashlightEnabled = value }
+
+    var isBeaconBleEnabled: Boolean
+        get() = _beaconManager.isBleEnabled
+        set(value) { _beaconManager.isBleEnabled = value }
+
+    fun startCountdownBeacon(seconds: Int) {
+        _beaconManager.startCountdownBeacon(seconds)
+    }
+
+    fun startInactivityMonitoring(seconds: Int) {
+        _beaconManager.startInactivityMonitoring(seconds)
+    }
+
+    fun stopInactivityMonitoring() {
+        _beaconManager.stopMonitoringInactivity()
+    }
+
+    fun cancelBeaconCountdown() {
+        _beaconManager.cancelCountdown()
+    }
+
+    fun stopBeacon() {
+        _beaconManager.stopBeacon()
+    }
+
+    fun activateBeaconImmediately() {
+        _beaconManager.activateBeacon()
     }
 }
 
