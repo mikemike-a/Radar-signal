@@ -1570,6 +1570,7 @@ fun HuntScreen(viewModel: RadarViewModel) {
     val huntDistanceText by viewModel.huntDistanceText.collectAsStateWithLifecycle()
     val huntDistanceProgress by viewModel.huntDistanceProgress.collectAsStateWithLifecycle()
     val huntSignalLost by viewModel.huntSignalLost.collectAsStateWithLifecycle()
+    val isHeatmapMode by viewModel.isHeatmapMode.collectAsStateWithLifecycle()
     val currentFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
     val detectedDevices by viewModel.detectedDevices.collectAsStateWithLifecycle()
 
@@ -1755,12 +1756,32 @@ fun HuntScreen(viewModel: RadarViewModel) {
                                 fontSize = 11.sp
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        IconButton(
+                            onClick = { viewModel.toggleHeatmapMode() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(if (isHeatmapMode) NeonCyan.copy(alpha = 0.2f) else DarkSurface, CircleShape)
+                                .border(1.dp, if (isHeatmapMode) NeonCyan else CardBorder, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = "Carte Thermique",
+                                tint = if (isHeatmapMode) NeonCyan else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Immersive Pulsing Target Widget
+                if (isHeatmapMode) {
+                    HeatmapWidget(viewModel = viewModel)
+                } else {
+                    // Immersive Pulsing Target Widget
                 Box(
                     modifier = Modifier
                         .size(240.dp)
@@ -1905,6 +1926,7 @@ fun HuntScreen(viewModel: RadarViewModel) {
                         )
                     }
                 }
+                } // End of else (!isHeatmapMode)
             }
 
             // Bottom Stop Hunt Button

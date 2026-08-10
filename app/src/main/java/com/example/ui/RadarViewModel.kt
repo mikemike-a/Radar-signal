@@ -83,6 +83,33 @@ class RadarViewModel(private val context: Context) : ViewModel() {
 
     private val huntRssiHistory = mutableListOf<Int>()
 
+    // --- CARTOGRAPHIE & HEATMAP ---
+    // Represents a 2D map: (X, Y) -> RSSI
+    private val _heatmapData = MutableStateFlow<Map<Pair<Int, Int>, Int>>(emptyMap())
+    val heatmapData = _heatmapData.asStateFlow()
+
+    // Are we in Heatmap mapping mode in the Hunt tab?
+    private val _isHeatmapMode = MutableStateFlow(false)
+    val isHeatmapMode = _isHeatmapMode.asStateFlow()
+
+    fun toggleHeatmapMode() {
+        _isHeatmapMode.value = !_isHeatmapMode.value
+    }
+
+    fun recordHeatmapPoint(x: Int, y: Int) {
+        val currentDevice = _huntingDevice.value
+        val currentRssi = currentDevice?.rssi
+        if (currentRssi != null && !_huntSignalLost.value) {
+            val currentMap = _heatmapData.value.toMutableMap()
+            currentMap[Pair(x, y)] = currentRssi
+            _heatmapData.value = currentMap
+        }
+    }
+
+    fun clearHeatmap() {
+        _heatmapData.value = emptyMap()
+    }
+
     // Database flow streams
     val knownDevices: StateFlow<List<KnownDevice>> = dao.getKnownDevicesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -381,3 +408,4 @@ class RadarViewModelFactory(private val context: Context) : ViewModelProvider.Fa
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
