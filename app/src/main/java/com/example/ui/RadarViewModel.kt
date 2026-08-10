@@ -59,6 +59,58 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
+    // --- MAGNETIC COMPASS & ORIENTATION ---
+    private val accelerometerSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val magneticSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+
+    private val _isCompassAvailable = MutableStateFlow(false)
+    val isCompassAvailable = _isCompassAvailable.asStateFlow()
+
+    private val _azimuth = MutableStateFlow(0f)
+    val azimuth = _azimuth.asStateFlow()
+
+    private val _pitch = MutableStateFlow(0f)
+    val pitch = _pitch.asStateFlow()
+
+    private val _roll = MutableStateFlow(0f)
+    val roll = _roll.asStateFlow()
+
+    private var gravityValues = FloatArray(3)
+    private var geomagneticValues = FloatArray(3)
+    private var hasGravity = false
+    private var hasGeomagnetic = false
+
+    private val compassListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent?) {
+            if (event == null) return
+            when (event.sensor.type) {
+                Sensor.TYPE_ACCELEROMETER -> {
+                    System.arraycopy(event.values, 0, gravityValues, 0, 3)
+                    hasGravity = true
+                }
+                Sensor.TYPE_MAGNETIC_FIELD -> {
+                    System.arraycopy(event.values, 0, geomagneticValues, 0, 3)
+                    hasGeomagnetic = true
+                }
+            }
+
+            if (hasGravity && hasGeomagnetic) {
+                val r = FloatArray(9)
+                val i = FloatArray(9)
+                if (SensorManager.getRotationMatrix(r, i, gravityValues, geomagneticValues)) {
+                    val orientation = FloatArray(3)
+                    SensorManager.getOrientation(r, orientation)
+                    val azDeg = Math.toDegrees(orientation[0].toDouble()).toFloat()
+                    val normalizedAz = (azDeg + 360f) % 360f
+                    _azimuth.value = normalizedAz
+                    _pitch.value = Math.toDegrees(orientation[1].toDouble()).toFloat()
+                    _roll.value = Math.toDegrees(orientation[2].toDouble()).toFloat()
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
     // --- MODE CHASSE (HUNTING / FIND MY PHONE) ---
     private val _huntingDevice = MutableStateFlow<DetectedDevice?>(null)
     val huntingDevice = _huntingDevice.asStateFlow()
@@ -162,6 +214,9 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     private val _isSystemNotificationsEnabled = MutableStateFlow(prefs.getBoolean("pref_system_notifications_enabled", true))
     val isSystemNotificationsEnabled = _isSystemNotificationsEnabled.asStateFlow()
 
+    private val _isCompassEnabled = MutableStateFlow(prefs.getBoolean("pref_compass_enabled", true))
+    val isCompassEnabled = _isCompassEnabled.asStateFlow()
+
     private var presenceService: PresenceService? = null
     private var isBound = false
 
@@ -203,6 +258,7 @@ class RadarViewModel(private val context: Context) : ViewModel() {
             bindPresenceService()
         }
         initBarometer()
+        initCompass()
     }
 
     fun bindPresenceService() {
@@ -372,6 +428,27 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         applyScannerSettings()
     }
 
+    fun updateCompassEnabled(enabled: Boolean) {
+        _isCompassEnabled.value = enabled
+        prefs.edit().putBoolean("pref_compass_enabled", enabled).apply()
+        applyCompassRegistration()
+    }
+
+    private fun initCompass() {
+        applyCompassRegistration()
+    }
+
+    private fun applyCompassRegistration() {
+        sensorManager?.unregisterListener(compassListener)
+        if (_isCompassEnabled.value && accelerometerSensor != null && magneticSensor != null) {
+            _isCompassAvailable.value = true
+            sensorManager?.registerListener(compassListener, accelerometerSensor, SensorManager.SENSOR_DELAY_UI)
+            sensorManager?.registerListener(compassListener, magneticSensor, SensorManager.SENSOR_DELAY_UI)
+        } else {
+            _isCompassAvailable.value = false
+        }
+    }
+
     private fun applyScannerSettings() {
         presenceService?.scanner?.let { s ->
             s.rssiThreshold = _rssiThreshold.value
@@ -488,6 +565,7 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         _beaconManager.onDestroy()
         unbindPresenceService()
         sensorManager?.unregisterListener(pressureListener)
+        sensorManager?.unregisterListener(compassListener)
         super.onCleared()
     }
 

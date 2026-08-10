@@ -18,6 +18,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,10 +40,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -2080,7 +2085,8 @@ fun HuntScreen(viewModel: RadarViewModel) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Target Header card
@@ -2464,6 +2470,12 @@ fun HuntScreen(viewModel: RadarViewModel) {
                         )
                     }
                 }
+
+                val isCompassEnabled by viewModel.isCompassEnabled.collectAsStateWithLifecycle()
+                if (isCompassEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CompassWidget(viewModel = viewModel)
+                }
                 } // End of else (!isHeatmapMode)
             }
 
@@ -2674,6 +2686,7 @@ fun SettingsScreen(viewModel: RadarViewModel) {
     val isGpsTrackingEnabled by viewModel.isGpsTrackingEnabled.collectAsStateWithLifecycle()
     val isHistoryLoggingEnabled by viewModel.isHistoryLoggingEnabled.collectAsStateWithLifecycle()
     val isSystemNotificationsEnabled by viewModel.isSystemNotificationsEnabled.collectAsStateWithLifecycle()
+    val isCompassEnabled by viewModel.isCompassEnabled.collectAsStateWithLifecycle()
 
     // Emergency SOS Beacon state collections
     val isBeaconActive by viewModel.isBeaconActive.collectAsStateWithLifecycle()
@@ -3493,6 +3506,28 @@ fun SettingsScreen(viewModel: RadarViewModel) {
                             colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = CardBorder.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 5. Boussole Magnétique
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Boussole Magnétique", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                            Text("Active la boussole d'orientation et d'alignement avec le Nord magnétique.", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isCompassEnabled,
+                            onCheckedChange = { viewModel.updateCompassEnabled(it) },
+                            modifier = Modifier.testTag("compass_enabled_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
+                        )
+                    }
                 }
             }
         }
@@ -3571,6 +3606,282 @@ fun SettingsScreen(viewModel: RadarViewModel) {
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompassWidget(viewModel: RadarViewModel) {
+    val azimuth by viewModel.azimuth.collectAsStateWithLifecycle()
+    val pitch by viewModel.pitch.collectAsStateWithLifecycle()
+    val roll by viewModel.roll.collectAsStateWithLifecycle()
+    val isCompassAvailable by viewModel.isCompassAvailable.collectAsStateWithLifecycle()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("compass_card"),
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        border = BorderStroke(1.dp, CardBorder)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Explore,
+                        contentDescription = null,
+                        tint = NeonCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Boussole d'Orientation",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TextPrimary
+                    )
+                }
+
+                // Small indicator showing if device is leveled
+                val isLeveled = kotlin.math.abs(pitch) < 10 && kotlin.math.abs(roll) < 10
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (isLeveled) NeonGreen.copy(alpha = 0.15f) else OrangeAccent.copy(alpha = 0.15f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (isLeveled) "Niveau à Plat 🟢" else "Incliner à plat ⚠️",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isLeveled) NeonGreen else OrangeAccent
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (!isCompassAvailable) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.ExploreOff,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Capteurs magnétiques non disponibles",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    // Compass dial Canvas
+                    Box(
+                        modifier = Modifier
+                            .size(130.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val center = Offset(size.width / 2, size.height / 2)
+                            val radius = size.width / 2 - 8.dp.toPx()
+
+                            // Draw background circle outline
+                            drawCircle(
+                                color = CardBorder,
+                                radius = radius,
+                                center = center,
+                                style = Stroke(width = 2.dp.toPx())
+                            )
+
+                            // Rotate canvas for dynamic heading
+                            rotate(degrees = -azimuth, pivot = center) {
+                                // Draw cardinal directions
+                                val textPaint = android.graphics.Paint().apply {
+                                    textSize = 11.dp.toPx()
+                                    isAntiAlias = true
+                                    textAlign = android.graphics.Paint.Align.CENTER
+                                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                }
+
+                                // North in Red
+                                textPaint.color = android.graphics.Color.parseColor("#EF4444")
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    "N",
+                                    center.x,
+                                    center.y - radius + 15.dp.toPx(),
+                                    textPaint
+                                )
+
+                                // South
+                                textPaint.color = android.graphics.Color.parseColor("#F9FAFB")
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    "S",
+                                    center.x,
+                                    center.y + radius - 5.dp.toPx(),
+                                    textPaint
+                                )
+
+                                // East
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    "E",
+                                    center.x + radius - 10.dp.toPx(),
+                                    center.y + 4.dp.toPx(),
+                                    textPaint
+                                )
+
+                                // West
+                                drawContext.canvas.nativeCanvas.drawText(
+                                    "O",
+                                    center.x - radius + 10.dp.toPx(),
+                                    center.y + 4.dp.toPx(),
+                                    textPaint
+                                )
+
+                                // Draw ticks every 30 degrees
+                                for (angle in 0 until 360 step 30) {
+                                    if (angle % 90 != 0) {
+                                        val angleRad = Math.toRadians(angle.toDouble())
+                                        val startX = center.x + (radius - 6.dp.toPx()) * kotlin.math.sin(angleRad).toFloat()
+                                        val startY = center.y - (radius - 6.dp.toPx()) * kotlin.math.cos(angleRad).toFloat()
+                                        val endX = center.x + radius * kotlin.math.sin(angleRad).toFloat()
+                                        val endY = center.y - radius * kotlin.math.cos(angleRad).toFloat()
+                                        drawLine(
+                                            color = TextSecondary.copy(alpha = 0.5f),
+                                            start = Offset(startX, startY),
+                                            end = Offset(endX, endY),
+                                            strokeWidth = 1.dp.toPx()
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Draw static reference pointer at the top
+                            val pointerPath = Path().apply {
+                                moveTo(center.x, center.y - radius - 6.dp.toPx())
+                                lineTo(center.x - 5.dp.toPx(), center.y - radius + 4.dp.toPx())
+                                lineTo(center.x + 5.dp.toPx(), center.y - radius + 4.dp.toPx())
+                                close()
+                            }
+                            drawPath(
+                                path = pointerPath,
+                                color = NeonGreen
+                            )
+                        }
+
+                        // Digital reading inside the center
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val directionName = when {
+                                azimuth >= 337.5 || azimuth < 22.5 -> "N"
+                                azimuth >= 22.5 && azimuth < 67.5 -> "NE"
+                                azimuth >= 67.5 && azimuth < 112.5 -> "E"
+                                azimuth >= 112.5 && azimuth < 157.5 -> "SE"
+                                azimuth >= 157.5 && azimuth < 202.5 -> "S"
+                                azimuth >= 202.5 && azimuth < 247.5 -> "SO"
+                                azimuth >= 247.5 && azimuth < 292.5 -> "O"
+                                else -> "NO"
+                            }
+                            Text(
+                                text = "${azimuth.roundToInt()}°",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = directionName,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeonCyan
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(20.dp))
+
+                    // Digital Info & Tilt Metrics
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Axe d'orientation :",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        val directionText = when {
+                            azimuth >= 337.5 || azimuth < 22.5 -> "Cap sur le Nord"
+                            azimuth >= 22.5 && azimuth < 67.5 -> "Cap sur le Nord-Est"
+                            azimuth >= 67.5 && azimuth < 112.5 -> "Cap sur l'Est"
+                            azimuth >= 112.5 && azimuth < 157.5 -> "Cap sur le Sud-Est"
+                            azimuth >= 157.5 && azimuth < 202.5 -> "Cap sur le Sud"
+                            azimuth >= 202.5 && azimuth < 247.5 -> "Cap sur le Sud-Ouest"
+                            azimuth >= 247.5 && azimuth < 292.5 -> "Cap sur l'Ouest"
+                            else -> "Cap sur le Nord-Ouest"
+                        }
+                        Text(
+                            text = directionText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Tilt meters
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Roulis (Roll) : ",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.width(75.dp)
+                            )
+                            Text(
+                                text = "${roll.roundToInt()}°",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (kotlin.math.abs(roll) < 10) NeonGreen else OrangeAccent
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Tangage (Pitch) : ",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.width(75.dp)
+                            )
+                            Text(
+                                text = "${pitch.roundToInt()}°",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (kotlin.math.abs(pitch) < 10) NeonGreen else OrangeAccent
+                            )
+                        }
+                    }
                 }
             }
         }
