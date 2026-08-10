@@ -80,6 +80,10 @@ class PresenceScanner(
     var departureDelayMs = 45000L // Time without packets before declaring a device departed
     var isPowerSaverMode = false
     var scanIntervalBleMs = 15000L // Periodical BLE restart cycle to refresh scans
+    var isWifiScanningEnabled = true
+    var isGpsTrackingEnabled = true
+    var isHistoryLoggingEnabled = true
+    var isSystemNotificationsEnabled = true
 
     // Thread-safe map of current active devices
     private val activeDevicesMap = java.util.concurrent.ConcurrentHashMap<String, DetectedDevice>()
@@ -98,6 +102,16 @@ class PresenceScanner(
     private var cacheUpdateJob: Job? = null
 
     init {
+        // Load initial settings from SharedPreferences
+        val prefs = context.getSharedPreferences("presence_radar_prefs", Context.MODE_PRIVATE)
+        rssiThreshold = prefs.getInt("pref_rssi_threshold", -90)
+        isPowerSaverMode = prefs.getBoolean("pref_power_saver", false)
+        departureDelayMs = prefs.getInt("pref_departure_delay_sec", 45) * 1000L
+        isWifiScanningEnabled = prefs.getBoolean("pref_wifi_scanning_enabled", true)
+        isGpsTrackingEnabled = prefs.getBoolean("pref_gps_tracking_enabled", true)
+        isHistoryLoggingEnabled = prefs.getBoolean("pref_history_logging_enabled", true)
+        isSystemNotificationsEnabled = prefs.getBoolean("pref_system_notifications_enabled", true)
+
         // Monitor DB changes to keep local cache in sync
         cacheUpdateJob = scope.launch(Dispatchers.IO) {
             dao.getKnownDevicesFlow().collect { devices ->
@@ -315,6 +329,7 @@ class PresenceScanner(
     }
 
     private fun startNsdDiscovery() {
+        if (!isWifiScanningEnabled) return
         val nsd = nsdManager ?: return
         acquireMulticastLock()
 
@@ -391,6 +406,7 @@ class PresenceScanner(
     }
 
     private fun getLastKnownLocation(): Location? {
+        if (!isGpsTrackingEnabled) return null
         return try {
             val gpsLocation = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             val networkLocation = locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
@@ -410,18 +426,20 @@ class PresenceScanner(
     private fun triggerArrival(known: KnownDevice) {
         scope.launch(Dispatchers.IO) {
             val loc = getLastKnownLocation()
-            dao.insertHistoryEntry(
-                HistoryEntry(
-                    identifier = known.identifier,
-                    alias = known.alias,
-                    deviceType = known.type,
-                    eventType = "ARRIVED",
-                    latitude = loc?.latitude,
-                    longitude = loc?.longitude
+            if (isHistoryLoggingEnabled) {
+                dao.insertHistoryEntry(
+                    HistoryEntry(
+                        identifier = known.identifier,
+                        alias = known.alias,
+                        deviceType = known.type,
+                        eventType = "ARRIVED",
+                        latitude = loc?.latitude,
+                        longitude = loc?.longitude
+                    )
                 )
-            )
+            }
 
-            if (known.notifyOnArrival) {
+            if (isSystemNotificationsEnabled && known.notifyOnArrival) {
                 sendPresenceNotification(
                     notificationId = known.identifier.hashCode() + 1000,
                     title = "Appareil détecté : ${known.alias}",
@@ -434,18 +452,20 @@ class PresenceScanner(
     private fun triggerDeparture(known: KnownDevice) {
         scope.launch(Dispatchers.IO) {
             val loc = getLastKnownLocation()
-            dao.insertHistoryEntry(
-                HistoryEntry(
-                    identifier = known.identifier,
-                    alias = known.alias,
-                    deviceType = known.type,
-                    eventType = "DEPARTED",
-                    latitude = loc?.latitude,
-                    longitude = loc?.longitude
+            if (isHistoryLoggingEnabled) {
+                dao.insertHistoryEntry(
+                    HistoryEntry(
+                        identifier = known.identifier,
+                        alias = known.alias,
+                        deviceType = known.type,
+                        eventType = "DEPARTED",
+                        latitude = loc?.latitude,
+                        longitude = loc?.longitude
+                    )
                 )
-            )
+            }
 
-            if (known.notifyOnDeparture) {
+            if (isSystemNotificationsEnabled && known.notifyOnDeparture) {
                 sendPresenceNotification(
                     notificationId = known.identifier.hashCode() + 2000,
                     title = "Alerte Anti-oubli : ${known.alias}",
@@ -614,6 +634,7 @@ class PresenceScanner(
     }
 
     private fun startWifiScan() {
+        if (!isWifiScanningEnabled) return
         val wm = wifiManager ?: return
         try {
             // Note: WifiManager.startScan() is deprecated, but is still functional and

@@ -77,6 +77,19 @@ class RadarViewModel(private val context: Context) : ViewModel() {
 
     private val huntRssiHistory = mutableListOf<Int>()
 
+    // --- GEIGER AUDIO-HAPTIC CONTROLLERS ---
+    private val _geigerManager = com.example.service.GeigerManager(context)
+    val isGeigerAudioEnabled = _geigerManager.isAudioEnabled
+    val isGeigerHapticEnabled = _geigerManager.isHapticEnabled
+
+    fun setGeigerAudioEnabled(enabled: Boolean) {
+        _geigerManager.setAudioEnabled(enabled)
+    }
+
+    fun setGeigerHapticEnabled(enabled: Boolean) {
+        _geigerManager.setHapticEnabled(enabled)
+    }
+
     // --- CARTOGRAPHIE & HEATMAP ---
     // Represents a 2D map: (X, Y) -> RSSI
     private val _heatmapData = MutableStateFlow<Map<Pair<Int, Int>, Int>>(emptyMap())
@@ -126,14 +139,28 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
     // Settings
-    private val _rssiThreshold = MutableStateFlow(-90)
+    private val prefs = context.getSharedPreferences("presence_radar_prefs", Context.MODE_PRIVATE)
+
+    private val _rssiThreshold = MutableStateFlow(prefs.getInt("pref_rssi_threshold", -90))
     val rssiThreshold = _rssiThreshold.asStateFlow()
 
-    private val _isPowerSaver = MutableStateFlow(false)
+    private val _isPowerSaver = MutableStateFlow(prefs.getBoolean("pref_power_saver", false))
     val isPowerSaver = _isPowerSaver.asStateFlow()
 
-    private val _departureDelaySec = MutableStateFlow(45)
+    private val _departureDelaySec = MutableStateFlow(prefs.getInt("pref_departure_delay_sec", 45))
     val departureDelaySec = _departureDelaySec.asStateFlow()
+
+    private val _isWifiScanningEnabled = MutableStateFlow(prefs.getBoolean("pref_wifi_scanning_enabled", true))
+    val isWifiScanningEnabled = _isWifiScanningEnabled.asStateFlow()
+
+    private val _isGpsTrackingEnabled = MutableStateFlow(prefs.getBoolean("pref_gps_tracking_enabled", true))
+    val isGpsTrackingEnabled = _isGpsTrackingEnabled.asStateFlow()
+
+    private val _isHistoryLoggingEnabled = MutableStateFlow(prefs.getBoolean("pref_history_logging_enabled", true))
+    val isHistoryLoggingEnabled = _isHistoryLoggingEnabled.asStateFlow()
+
+    private val _isSystemNotificationsEnabled = MutableStateFlow(prefs.getBoolean("pref_system_notifications_enabled", true))
+    val isSystemNotificationsEnabled = _isSystemNotificationsEnabled.asStateFlow()
 
     private var presenceService: PresenceService? = null
     private var isBound = false
@@ -305,16 +332,43 @@ class RadarViewModel(private val context: Context) : ViewModel() {
 
     fun updateRssiThreshold(value: Int) {
         _rssiThreshold.value = value
+        prefs.edit().putInt("pref_rssi_threshold", value).apply()
         applyScannerSettings()
     }
 
     fun updatePowerSaver(enabled: Boolean) {
         _isPowerSaver.value = enabled
+        prefs.edit().putBoolean("pref_power_saver", enabled).apply()
         applyScannerSettings()
     }
 
     fun updateDepartureDelay(seconds: Int) {
         _departureDelaySec.value = seconds
+        prefs.edit().putInt("pref_departure_delay_sec", seconds).apply()
+        applyScannerSettings()
+    }
+
+    fun updateWifiScanning(enabled: Boolean) {
+        _isWifiScanningEnabled.value = enabled
+        prefs.edit().putBoolean("pref_wifi_scanning_enabled", enabled).apply()
+        applyScannerSettings()
+    }
+
+    fun updateGpsTracking(enabled: Boolean) {
+        _isGpsTrackingEnabled.value = enabled
+        prefs.edit().putBoolean("pref_gps_tracking_enabled", enabled).apply()
+        applyScannerSettings()
+    }
+
+    fun updateHistoryLogging(enabled: Boolean) {
+        _isHistoryLoggingEnabled.value = enabled
+        prefs.edit().putBoolean("pref_history_logging_enabled", enabled).apply()
+        applyScannerSettings()
+    }
+
+    fun updateSystemNotifications(enabled: Boolean) {
+        _isSystemNotificationsEnabled.value = enabled
+        prefs.edit().putBoolean("pref_system_notifications_enabled", enabled).apply()
         applyScannerSettings()
     }
 
@@ -323,6 +377,10 @@ class RadarViewModel(private val context: Context) : ViewModel() {
             s.rssiThreshold = _rssiThreshold.value
             s.isPowerSaverMode = _isPowerSaver.value
             s.departureDelayMs = _departureDelaySec.value * 1000L
+            s.isWifiScanningEnabled = _isWifiScanningEnabled.value
+            s.isGpsTrackingEnabled = _isGpsTrackingEnabled.value
+            s.isHistoryLoggingEnabled = _isHistoryLoggingEnabled.value
+            s.isSystemNotificationsEnabled = _isSystemNotificationsEnabled.value
         }
     }
 
@@ -360,6 +418,7 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         huntRssiHistory.clear()
         huntRssiHistory.add(device.rssi)
         updateHuntMetrics(device.rssi)
+        _geigerManager.updateTargetState(hunting = true, rssi = device.rssi, lost = false)
         activeTab.value = "hunt" // Bascule automatiquement sur l'onglet de Chasse !
     }
 
@@ -367,6 +426,7 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         _huntingDevice.value = null
         _huntSignalLost.value = true
         huntRssiHistory.clear()
+        _geigerManager.updateTargetState(hunting = false, rssi = -100, lost = true)
     }
 
     private fun updateHuntingDeviceFromScanned(devices: List<DetectedDevice>) {
@@ -382,11 +442,13 @@ class RadarViewModel(private val context: Context) : ViewModel() {
                 huntRssiHistory.removeAt(0)
             }
             updateHuntMetrics(updated.rssi)
+            _geigerManager.updateTargetState(hunting = true, rssi = updated.rssi, lost = false)
         } else {
             // Check if last seen was more than 15 seconds ago to declare lost
             val elapsed = System.currentTimeMillis() - target.lastSeen
             if (elapsed > 15000L) {
                 _huntSignalLost.value = true
+                _geigerManager.updateTargetState(hunting = true, rssi = -100, lost = true)
             }
         }
     }
@@ -422,6 +484,7 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     }
 
     override fun onCleared() {
+        _geigerManager.onDestroy()
         _beaconManager.onDestroy()
         unbindPresenceService()
         sensorManager?.unregisterListener(pressureListener)

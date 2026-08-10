@@ -2240,7 +2240,138 @@ fun HuntScreen(viewModel: RadarViewModel) {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Retours Sonores & Haptiques (Effet Geiger)
+                val isGeigerAudio by viewModel.isGeigerAudioEnabled.collectAsStateWithLifecycle()
+                val isGeigerHaptic by viewModel.isGeigerHapticEnabled.collectAsStateWithLifecycle()
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    border = BorderStroke(1.dp, CardBorder),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Hearing,
+                                    contentDescription = null,
+                                    tint = NeonGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Rétroaction Geiger active",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(NeonGreen.copy(alpha = 0.15f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "GEIGER MODE",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = NeonGreen
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Audio feedback switch
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.setGeigerAudioEnabled(!isGeigerAudio) }
+                                    .padding(vertical = 4.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isGeigerAudio) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                        contentDescription = null,
+                                        tint = if (isGeigerAudio) NeonGreen else TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text("Bips Sonores", fontSize = 11.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                        Text("Fréquence RF", fontSize = 9.sp, color = TextSecondary)
+                                    }
+                                }
+                                Switch(
+                                    checked = isGeigerAudio,
+                                    onCheckedChange = { viewModel.setGeigerAudioEnabled(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = ObsidianBg,
+                                        checkedTrackColor = NeonGreen
+                                    ),
+                                    modifier = Modifier.scale(0.75f).testTag("geiger_audio_toggle")
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            // Haptic feedback switch
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.setGeigerHapticEnabled(!isGeigerHaptic) }
+                                    .padding(vertical = 4.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Vibration,
+                                        contentDescription = null,
+                                        tint = if (isGeigerHaptic) NeonGreen else TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text("Vibrations", fontSize = 11.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                        Text("Pulsions Geiger", fontSize = 9.sp, color = TextSecondary)
+                                    }
+                                }
+                                Switch(
+                                    checked = isGeigerHaptic,
+                                    onCheckedChange = { viewModel.setGeigerHapticEnabled(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = ObsidianBg,
+                                        checkedTrackColor = NeonGreen
+                                    ),
+                                    modifier = Modifier.scale(0.75f).testTag("geiger_haptic_toggle")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Trend display card
                 Row(
@@ -2538,6 +2669,11 @@ fun SettingsScreen(viewModel: RadarViewModel) {
     val powerSaverEnabled by viewModel.isPowerSaver.collectAsStateWithLifecycle()
     val departureSecs by viewModel.departureDelaySec.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
+
+    val isWifiScanningEnabled by viewModel.isWifiScanningEnabled.collectAsStateWithLifecycle()
+    val isGpsTrackingEnabled by viewModel.isGpsTrackingEnabled.collectAsStateWithLifecycle()
+    val isHistoryLoggingEnabled by viewModel.isHistoryLoggingEnabled.collectAsStateWithLifecycle()
+    val isSystemNotificationsEnabled by viewModel.isSystemNotificationsEnabled.collectAsStateWithLifecycle()
 
     // Emergency SOS Beacon state collections
     val isBeaconActive by viewModel.isBeaconActive.collectAsStateWithLifecycle()
@@ -3041,6 +3177,132 @@ fun SettingsScreen(viewModel: RadarViewModel) {
             }
         }
 
+        // Section Geiger Feedback
+        item {
+            val isGeigerAudio by viewModel.isGeigerAudioEnabled.collectAsStateWithLifecycle()
+            val isGeigerHaptic by viewModel.isGeigerHapticEnabled.collectAsStateWithLifecycle()
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = BorderStroke(1.dp, CardBorder)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Radar Sonore & Retours Geiger 🔊📳",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Retour haptique et sonore proportionnel au signal",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "En mode chasse, l'appareil émet des bips et des vibrations dont le rythme s'accélère à mesure que vous vous rapprochez de l'appareil traqué (effet Compteur Geiger).",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Audio feedback toggle
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.setGeigerAudioEnabled(!isGeigerAudio) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isGeigerAudio) NeonGreen.copy(alpha = 0.05f) else ObsidianBg
+                            ),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (isGeigerAudio) NeonGreen.copy(alpha = 0.4f) else CardBorder
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = if (isGeigerAudio) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                    contentDescription = null,
+                                    tint = if (isGeigerAudio) NeonGreen else TextSecondary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Bips Sonores", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Switch(
+                                    checked = isGeigerAudio,
+                                    onCheckedChange = { viewModel.setGeigerAudioEnabled(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = ObsidianBg,
+                                        checkedTrackColor = NeonGreen
+                                    ),
+                                    modifier = Modifier.scale(0.8f).testTag("settings_geiger_audio_switch")
+                                )
+                            }
+                        }
+
+                        // Haptic feedback toggle
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.setGeigerHapticEnabled(!isGeigerHaptic) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isGeigerHaptic) NeonGreen.copy(alpha = 0.05f) else ObsidianBg
+                            ),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (isGeigerHaptic) NeonGreen.copy(alpha = 0.4f) else CardBorder
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Vibration,
+                                    contentDescription = null,
+                                    tint = if (isGeigerHaptic) NeonGreen else TextSecondary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Vibrations", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Switch(
+                                    checked = isGeigerHaptic,
+                                    onCheckedChange = { viewModel.setGeigerHapticEnabled(it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = ObsidianBg,
+                                        checkedTrackColor = NeonGreen
+                                    ),
+                                    modifier = Modifier.scale(0.8f).testTag("settings_geiger_haptic_switch")
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section Sliders
         item {
             Card(
@@ -3123,6 +3385,114 @@ fun SettingsScreen(viewModel: RadarViewModel) {
                         ),
                         modifier = Modifier.testTag("departure_delay_slider")
                     )
+                }
+            }
+        }
+
+        // Section Fonctionnalités & Confidentialité
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = BorderStroke(1.dp, CardBorder)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Fonctionnalités & Confidentialité",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Activez ou désactivez les modules système de l'application",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 1. Détection Wi-Fi
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Détection Réseaux Wi-Fi", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                            Text("Permet de scanner les points d'accès Wi-Fi & appareils mDNS à proximité.", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isWifiScanningEnabled,
+                            onCheckedChange = { viewModel.updateWifiScanning(it) },
+                            modifier = Modifier.testTag("wifi_scan_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = CardBorder.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 2. Géolocalisation (GPS)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Suivi de Position (GPS)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                            Text("Associe des coordonnées géographiques GPS aux événements d'arrivée et départ.", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isGpsTrackingEnabled,
+                            onCheckedChange = { viewModel.updateGpsTracking(it) },
+                            modifier = Modifier.testTag("gps_tracking_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = CardBorder.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 3. Historique automatique
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Journalisation de l'Historique", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                            Text("Enregistre automatiquement les détections d'appareils connus dans l'Historique.", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isHistoryLoggingEnabled,
+                            onCheckedChange = { viewModel.updateHistoryLogging(it) },
+                            modifier = Modifier.testTag("history_logging_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = CardBorder.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 4. Notifications Système
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Notifications Système", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
+                            Text("Affiche des notifications d'arrière-plan d'arrivée et d'alerte anti-oubli.", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isSystemNotificationsEnabled,
+                            onCheckedChange = { viewModel.updateSystemNotifications(it) },
+                            modifier = Modifier.testTag("system_notifications_toggle"),
+                            colors = SwitchDefaults.colors(checkedThumbColor = ObsidianBg, checkedTrackColor = NeonGreen)
+                        )
+                    }
                 }
             }
         }
