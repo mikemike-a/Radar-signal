@@ -22,6 +22,7 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
   - Tendance du signal (approche ou éloignement).
   - **Heatmap (Carte thermique locale) :** Construction d'une carte 2D de la force du signal en se déplaçant pour mieux repérer la cible.
   - **Radar Sonore & Retours Geiger (Effet Geiger) 🔊📳 :** Émission de bips sonores et d'impulsions haptiques (vibrations) dont le rythme et l'intensité s'accélèrent automatiquement à mesure de l'approche de la cible, permettant une recherche "à l'aveugle" très intuitive.
+    - **AR Finder (Expérimental) :** Interface de recherche en Réalité Augmentée permettant de visualiser la cible via la caméra (infrastructure ARCore en cours d'intégration).
 - **Altimètre & Baromètre Intégré :** 
   - Estimation de l'altitude relative et détection de l'étage (RDC, Étage 1, Sous-sol, etc.) grâce au capteur de pression physique.
 - **Balise de Détresse SOS (Sauvetage en décombres) :**
@@ -33,6 +34,7 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
   - Assignation d'un "étage" de référence à un appareil pour comparer facilement sa position verticale avec celle du téléphone.
   - Filtres rapides (Connus, BLE, Wi-Fi, mDNS) pour identifier les appareils familiers parmi tous les signaux ambiants.
 - **Historique & Journal des Événements :** Suivi horodaté et géolocalisé des arrivées et départs d'appareils.
+- **Boussole Magnétique :** Utilisation des capteurs (accéléromètre, gyroscope, magnétomètre) pour orienter l'utilisateur.
 
 ---
 
@@ -40,9 +42,8 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
 
 Voici une liste d'idées pour transformer cet outil en un véritable couteau suisse de la détection et du tracking :
 
-### 1. Réalité Augmentée (AR) & Boussole
+### 1. Réalité Augmentée (AR)
 - **AR Finder :** Utiliser la caméra du téléphone via ARCore pour afficher des particules flottantes ou un pointeur 3D là où le signal semble le plus fort.
-- **Boussole Magnétique :** Combiner l'accéléromètre, le gyroscope et le magnétomètre pour orienter l'utilisateur (si l'appareil ciblé supporte la radiogoniométrie / Bluetooth Direction Finding 5.1+).
 
 ### 3. Cartographie & Triangulation
 - **Triangulation collaborative :** Si plusieurs personnes utilisent l'application dans la même zone, fusionner leurs données RSSI en temps réel pour trianguler la position exacte de la cible sur une carte.

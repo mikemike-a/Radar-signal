@@ -81,6 +81,37 @@ val OrangeAccent = Color(0xFFF59E0B) // Warn yellow/orange for proximity
 val TextPrimary = Color(0xFFF9FAFB)
 val TextSecondary = Color(0xFF9CA3AF)
 
+@Composable
+fun WifiDiagnosticsWidget(viewModel: RadarViewModel) {
+    val wifiDiagnostics by viewModel.wifiDiagnostics.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.getWifiDiagnostics() }
+    
+    if (wifiDiagnostics.isNotEmpty() && (wifiDiagnostics["networkCount"] as? Int ?: 0) > 0) {
+        Card(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Diagnostics Wi-Fi", fontWeight = FontWeight.Bold, color = NeonCyan)
+                Text("Nombre de réseaux : ${wifiDiagnostics["networkCount"]}")
+                Text("RSSI Moyen : ${"%.1f".format(wifiDiagnostics["avgRssi"])} dBm")
+            }
+        }
+    }
+}
+
+@Composable
+fun StalkerAlertWidget(viewModel: RadarViewModel) {
+    val potentialStalkers by viewModel.potentialStalkers.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.analyzePotentialStalkers() }
+
+    if (potentialStalkers.isNotEmpty()) {
+        Card(modifier = Modifier.padding(16.dp).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.errorContainer)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("⚠️ Alerte Stalker", color = androidx.compose.material3.MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                Text("${potentialStalkers.size} appareils suspects détectés.", color = androidx.compose.material3.MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -573,6 +604,9 @@ fun RadarScreen(viewModel: RadarViewModel) {
 
         // Baromètre & Altimètre
         BarometerWidget(viewModel = viewModel)
+        
+        // Wi-Fi Diagnostics
+        WifiDiagnosticsWidget(viewModel = viewModel)
 
         HorizontalDivider(color = CardBorder, thickness = 1.dp)
 
@@ -2682,6 +2716,7 @@ fun HistoryLogCard(log: HistoryEntry) {
 // ==================== SCREEN 4: PARAMETRES & GUIDES CONTEXTUELS ====================
 @Composable
 fun SettingsScreen(viewModel: RadarViewModel) {
+    StalkerAlertWidget(viewModel = viewModel)
     val rssiVal by viewModel.rssiThreshold.collectAsStateWithLifecycle()
     val powerSaverEnabled by viewModel.isPowerSaver.collectAsStateWithLifecycle()
     val departureSecs by viewModel.departureDelaySec.collectAsStateWithLifecycle()

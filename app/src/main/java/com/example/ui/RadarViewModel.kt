@@ -30,6 +30,40 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     private val db = AppDatabase.getDatabase(context)
     private val dao = db.deviceDao()
 
+    // --- STALKER DETECTION & WI-FI DIAGNOSTICS ---
+    private val _potentialStalkers = MutableStateFlow<List<String>>(emptyList())
+    val potentialStalkers = _potentialStalkers.asStateFlow()
+
+    private val _wifiDiagnostics = MutableStateFlow<Map<String, Any>>(emptyMap())
+    val wifiDiagnostics = _wifiDiagnostics.asStateFlow()
+
+    fun analyzePotentialStalkers() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val history = dao.getHistoryFlow().first()
+            val known = dao.getKnownDevicesList()
+            val knownIdentifiers = known.map { it.identifier }.toSet()
+
+            // Count frequency of unknown devices
+            val counts = history
+                .filter { it.identifier !in knownIdentifiers }
+                .groupBy { it.identifier }
+                .filter { it.value.size > 5 } // Threshold for "stalking"
+                .map { it.key }
+
+            _potentialStalkers.value = counts
+        }
+    }
+
+    fun getWifiDiagnostics() {
+        val wifiDevices = _detectedDevices.value.filter { it.type == "WIFI" }
+        val avgRssi = if (wifiDevices.isNotEmpty()) wifiDevices.map { it.rssi }.average() else 0.0
+        val networkCount = wifiDevices.size
+        _wifiDiagnostics.value = mapOf(
+            "avgRssi" to avgRssi,
+            "networkCount" to networkCount
+        )
+    }
+
     // --- BAROMETER & ELEVATION TRACKER ---
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
     private val pressureSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PRESSURE)
