@@ -9,7 +9,8 @@ data class KnownDevice(
     val alias: String,
     val type: String, // "BLE" or "WIFI"
     val addedAt: Long = System.currentTimeMillis(),
-    val rssiThreshold: Int = -95
+    val rssiThreshold: Int = -95,
+    val floor: Int = 0 // Estime ou configure l'étage de l'appareil (0 = Rez-de-chaussée)
 )
 
 @Entity(tableName = "presence_history")

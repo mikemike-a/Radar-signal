@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -66,6 +67,7 @@ val CardBorder = Color(0xFF1F2937)
 val NeonGreen = Color(0xFF10B981) // High glowing emerald green
 val NeonCyan = Color(0xFF06B6D4) // Electric cyan
 val WarmRed = Color(0xFFEF4444) // Bright warning red
+val OrangeAccent = Color(0xFFF59E0B) // Warn yellow/orange for proximity
 val TextPrimary = Color(0xFFF9FAFB)
 val TextSecondary = Color(0xFF9CA3AF)
 
@@ -310,6 +312,7 @@ fun MainAppContent(viewModel: RadarViewModel) {
         ) {
             when (activeTabState) {
                 "radar" -> RadarScreen(viewModel = viewModel)
+                "hunt" -> HuntScreen(viewModel = viewModel)
                 "known" -> KnownDevicesScreen(viewModel = viewModel)
                 "history" -> HistoryScreen(viewModel = viewModel)
                 "settings" -> SettingsScreen(viewModel = viewModel)
@@ -421,6 +424,25 @@ fun RadarBottomNavigation(activeTab: String, onTabSelected: (String) -> Unit) {
         )
 
         NavigationBarItem(
+            selected = activeTab == "hunt",
+            onClick = { onTabSelected("hunt") },
+            label = { Text("Chasse") },
+            icon = {
+                Icon(
+                    imageVector = if (activeTab == "hunt") Icons.Default.MyLocation else Icons.Outlined.MyLocation,
+                    contentDescription = "Chasse"
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = ObsidianBg,
+                selectedTextColor = NeonGreen,
+                indicatorColor = NeonGreen,
+                unselectedIconColor = TextSecondary,
+                unselectedTextColor = TextSecondary
+            )
+        )
+
+        NavigationBarItem(
             selected = activeTab == "known",
             onClick = { onTabSelected("known") },
             label = { Text("Appareils") },
@@ -502,6 +524,9 @@ fun RadarScreen(viewModel: RadarViewModel) {
             )
         }
 
+        // Baromètre & Simulateur Altimètre
+        BarometerWidget(viewModel = viewModel)
+
         HorizontalDivider(color = CardBorder, thickness = 1.dp)
 
         Row(
@@ -572,7 +597,9 @@ fun RadarScreen(viewModel: RadarViewModel) {
                 items(detectedDevices, key = { it.identifier }) { device ->
                     DetectedDeviceCard(
                         device = device,
-                        onAddKnown = { showAddAliasDialog = device }
+                        viewModel = viewModel,
+                        onAddKnown = { showAddAliasDialog = device },
+                        onStartHunt = { viewModel.startHunting(device) }
                     )
                 }
             }
@@ -582,6 +609,8 @@ fun RadarScreen(viewModel: RadarViewModel) {
     // Dialog for adding detected device to known devices
     showAddAliasDialog?.let { device ->
         var aliasInput by remember { mutableStateOf(device.name ?: "") }
+        val currentFloorEstimate by viewModel.estimatedFloor.collectAsStateWithLifecycle()
+        var floorInput by remember { mutableStateOf(currentFloorEstimate) }
 
         Dialog(onDismissRequest = { showAddAliasDialog = null }) {
             Card(
@@ -617,7 +646,7 @@ fun RadarScreen(viewModel: RadarViewModel) {
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
                         value = aliasInput,
@@ -637,6 +666,38 @@ fun RadarScreen(viewModel: RadarViewModel) {
                             .testTag("alias_input_field")
                     )
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Tactile floor configuration selector
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Étage attribué :", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { floorInput-- },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Remove, contentDescription = "Moins", tint = NeonGreen)
+                            }
+                            Text(
+                                text = if (floorInput == 0) "RDC" else "Étage $floorInput",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            IconButton(
+                                onClick = { floorInput++ },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = "Plus", tint = NeonGreen)
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
@@ -647,7 +708,7 @@ fun RadarScreen(viewModel: RadarViewModel) {
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -668,7 +729,8 @@ fun RadarScreen(viewModel: RadarViewModel) {
                                     viewModel.addKnownDevice(
                                         identifier = device.identifier,
                                         alias = aliasInput,
-                                        type = device.type
+                                        type = device.type,
+                                        floor = floorInput
                                     )
                                     showAddAliasDialog = null
                                 }
@@ -792,7 +854,17 @@ fun RadarVisualizerWidget(isScanning: Boolean, devices: List<DetectedDevice>) {
 
 // --- Composable Card for Detected Device ---
 @Composable
-fun DetectedDeviceCard(device: DetectedDevice, onAddKnown: () -> Unit) {
+fun DetectedDeviceCard(
+    device: DetectedDevice,
+    viewModel: RadarViewModel,
+    onAddKnown: () -> Unit,
+    onStartHunt: () -> Unit
+) {
+    val knownDevices by viewModel.knownDevices.collectAsStateWithLifecycle()
+    val currentFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
+    val savedKnown = knownDevices.find { it.identifier == device.identifier }
+    val savedFloor = savedKnown?.floor
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
@@ -848,9 +920,29 @@ fun DetectedDeviceCard(device: DetectedDevice, onAddKnown: () -> Unit) {
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "Connu",
+                                text = "Suivi",
                                 fontSize = 9.sp,
                                 color = NeonGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (savedFloor != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val isSameFloor = savedFloor == currentFloor
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    if (isSameFloor) NeonGreen.copy(alpha = 0.2f) else CardBorder,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (savedFloor == 0) "RDC" else "Étage $savedFloor",
+                                fontSize = 9.sp,
+                                color = if (isSameFloor) NeonGreen else NeonCyan,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -885,7 +977,7 @@ fun DetectedDeviceCard(device: DetectedDevice, onAddKnown: () -> Unit) {
                         color = TextSecondary,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Box(
                         modifier = Modifier
                             .background(CardBorder, RoundedCornerShape(4.dp))
@@ -898,34 +990,61 @@ fun DetectedDeviceCard(device: DetectedDevice, onAddKnown: () -> Unit) {
                             fontWeight = FontWeight.Medium
                         )
                     }
+
+                    if (savedFloor != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val floorDiff = savedFloor - currentFloor
+                        Text(
+                            text = when {
+                                floorDiff == 0 -> "🎯 Même étage"
+                                floorDiff > 0 -> "↕️ +$floorDiff étage${if (floorDiff > 1) "s" else ""}"
+                                else -> "↕️ $floorDiff étage${if (floorDiff < -1) "s" else ""}"
+                            },
+                            fontSize = 10.sp,
+                            color = if (floorDiff == 0) NeonGreen else TextSecondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Right Quick-Add Action
-            if (!device.isKnown) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Hunt button
                 IconButton(
-                    onClick = onAddKnown,
+                    onClick = onStartHunt,
                     modifier = Modifier
-                        .background(CardBorder, CircleShape)
+                        .background(NeonGreen.copy(alpha = 0.15f), CircleShape)
                         .size(36.dp)
-                        .testTag("add_known_device_icon_button")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Ajouter aux connus",
-                        tint = TextPrimary,
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "Chasser l'appareil",
+                        tint = NeonGreen,
                         modifier = Modifier.size(18.dp)
                     )
                 }
-            } else {
-                // Glow Dot
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(NeonGreen, CircleShape)
-                )
+
+                if (!device.isKnown) {
+                    IconButton(
+                        onClick = onAddKnown,
+                        modifier = Modifier
+                            .background(CardBorder, CircleShape)
+                            .size(36.dp)
+                            .testTag("add_known_device_icon_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Ajouter aux connus",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1012,7 +1131,22 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(knownDevices, key = { it.identifier }) { device ->
-                    KnownDeviceRow(device = device, onDelete = { viewModel.deleteKnownDevice(device) })
+                    val detectedList by viewModel.detectedDevices.collectAsStateWithLifecycle()
+                    val activeMatch = detectedList.find { it.identifier == device.identifier }
+                    val mockDevice = activeMatch ?: DetectedDevice(
+                        identifier = device.identifier,
+                        name = device.alias,
+                        rssi = -100,
+                        type = device.type,
+                        isKnown = true,
+                        alias = device.alias
+                    )
+
+                    KnownDeviceRow(
+                        device = device,
+                        onDelete = { viewModel.deleteKnownDevice(device) },
+                        onStartHunt = { viewModel.startHunting(mockDevice) }
+                    )
                 }
             }
         }
@@ -1022,6 +1156,8 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
         var macInput by remember { mutableStateOf("") }
         var aliasInput by remember { mutableStateOf("") }
         var typeInput by remember { mutableStateOf("BLE") } // "BLE" or "WIFI"
+        val currentFloorEstimate by viewModel.estimatedFloor.collectAsStateWithLifecycle()
+        var floorInput by remember { mutableStateOf(currentFloorEstimate) }
 
         Dialog(onDismissRequest = { showManualAddDialog = false }) {
             Card(
@@ -1070,6 +1206,38 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    // Tactile floor configuration selector
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Étage attribué :", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { floorInput-- },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Remove, contentDescription = "Moins", tint = NeonGreen)
+                            }
+                            Text(
+                                text = if (floorInput == 0) "RDC" else "Étage $floorInput",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            IconButton(
+                                onClick = { floorInput++ },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = "Plus", tint = NeonGreen)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Type selection segmented control
                     Row(
@@ -1131,7 +1299,8 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
                                     viewModel.addKnownDevice(
                                         identifier = macInput,
                                         alias = aliasInput,
-                                        type = typeInput
+                                        type = typeInput,
+                                        floor = floorInput
                                     )
                                     showManualAddDialog = false
                                 }
@@ -1151,7 +1320,11 @@ fun KnownDevicesScreen(viewModel: RadarViewModel) {
 }
 
 @Composable
-fun KnownDeviceRow(device: KnownDevice, onDelete: () -> Unit) {
+fun KnownDeviceRow(
+    device: KnownDevice,
+    onDelete: () -> Unit,
+    onStartHunt: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
@@ -1173,12 +1346,27 @@ fun KnownDeviceRow(device: KnownDevice, onDelete: () -> Unit) {
             Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = device.alias,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = TextPrimary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = device.alias,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(NeonCyan.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (device.floor == 0) "RDC" else "Étage ${device.floor}",
+                            fontSize = 9.sp,
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Identifiant: ${device.identifier}",
@@ -1189,12 +1377,548 @@ fun KnownDeviceRow(device: KnownDevice, onDelete: () -> Unit) {
                 )
             }
 
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Supprimer",
-                    tint = WarmRed.copy(alpha = 0.8f)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onStartHunt) {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "Chasser l'appareil",
+                        tint = NeonGreen
+                    )
+                }
+
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Supprimer",
+                        tint = WarmRed.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+// --- BAROMETER & ELEVATION DETECTOR COMPOSABLE ---
+@Composable
+fun BarometerWidget(viewModel: RadarViewModel) {
+    val isBarometerAvailable by viewModel.isBarometerAvailable.collectAsStateWithLifecycle()
+    val currentPressure by viewModel.currentPressure.collectAsStateWithLifecycle()
+    val referencePressure by viewModel.referencePressure.collectAsStateWithLifecycle()
+    val estimatedRelativeAltitude by viewModel.estimatedRelativeAltitude.collectAsStateWithLifecycle()
+    val estimatedFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
+    val isSimulatingBarometer by viewModel.isSimulatingBarometer.collectAsStateWithLifecycle()
+    val simulatedPressure by viewModel.simulatedPressure.collectAsStateWithLifecycle()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        border = BorderStroke(1.dp, CardBorder)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Compress,
+                        contentDescription = null,
+                        tint = NeonGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Baromètre & Altimètre (Étage)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TextPrimary
+                    )
+                }
+                
+                // Calibration Button
+                TextButton(
+                    onClick = { viewModel.calibrateGroundLevel() },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Calibrer RDC", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Main values grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Pressure column
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Pression", fontSize = 10.sp, color = TextSecondary)
+                    Text(
+                        text = if (currentPressure != null) String.format("%.2f hPa", currentPressure) else "--- hPa",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TextPrimary
+                    )
+                }
+
+                // Altitude column
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Rel. Altitude", fontSize = 10.sp, color = TextSecondary)
+                    Text(
+                        text = String.format("%+.1f m", estimatedRelativeAltitude),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = if (estimatedRelativeAltitude >= 0) NeonGreen else WarmRed
+                    )
+                }
+
+                // Estimated Floor column
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Étage Estimé", fontSize = 10.sp, color = TextSecondary)
+                    Text(
+                        text = when {
+                            estimatedFloor == 0 -> "RDC (0)"
+                            estimatedFloor > 0 -> "Étage +$estimatedFloor"
+                            else -> "Sous-sol $estimatedFloor"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = NeonCyan
+                    )
+                }
+            }
+
+            // Reference details info
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = String.format("Réf. RDC : %.2f hPa", referencePressure),
+                    fontSize = 11.sp,
+                    color = TextSecondary
                 )
+                
+                // Sensor status / Toggle simulation
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (isBarometerAvailable) "Capteur Réel" else "Simulation (Manuel)",
+                        fontSize = 11.sp,
+                        color = if (isBarometerAvailable && !isSimulatingBarometer) NeonGreen else NeonCyan,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Switch(
+                        checked = isSimulatingBarometer || !isBarometerAvailable,
+                        onCheckedChange = { viewModel.setSimulatingBarometer(it) },
+                        modifier = Modifier.scale(0.7f),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = ObsidianBg,
+                            checkedTrackColor = NeonCyan,
+                            uncheckedThumbColor = TextSecondary,
+                            uncheckedTrackColor = CardBorder
+                        )
+                    )
+                }
+            }
+
+            // Simulated control slider
+            if (isSimulatingBarometer || !isBarometerAvailable) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Ajuster la pression simulée :", fontSize = 11.sp, color = TextSecondary)
+                        Text(String.format("%.1f hPa", simulatedPressure), fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                    }
+                    Slider(
+                        value = simulatedPressure,
+                        onValueChange = { viewModel.updateSimulatedPressure(it) },
+                        valueRange = 980f..1040f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = NeonCyan,
+                            activeTrackColor = NeonCyan,
+                            inactiveTrackColor = CardBorder
+                        ),
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+// --- IMMERSIVE HUNT SCREEN COMPOSABLE ---
+@Composable
+fun HuntScreen(viewModel: RadarViewModel) {
+    val huntingDevice by viewModel.huntingDevice.collectAsStateWithLifecycle()
+    val huntRssiTrend by viewModel.huntRssiTrend.collectAsStateWithLifecycle()
+    val huntDistanceText by viewModel.huntDistanceText.collectAsStateWithLifecycle()
+    val huntDistanceProgress by viewModel.huntDistanceProgress.collectAsStateWithLifecycle()
+    val huntSignalLost by viewModel.huntSignalLost.collectAsStateWithLifecycle()
+    val currentFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
+    val detectedDevices by viewModel.detectedDevices.collectAsStateWithLifecycle()
+
+    // Animation for pulsing radar ring
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    
+    // Smooth pulse speed adjusting automatically to distance!
+    val pulseDuration = remember(huntDistanceProgress) {
+        val baseDuration = 1800
+        val reduction = (huntDistanceProgress * 1400).toInt()
+        (baseDuration - reduction).coerceIn(400, 1800)
+    }
+
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = pulseDuration, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseScale"
+    )
+
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = pulseDuration, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseAlpha"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        if (huntingDevice == null) {
+            // Empty state - select a device to hunt
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FilterCenterFocus,
+                    contentDescription = null,
+                    tint = NeonGreen.copy(alpha = 0.5f),
+                    modifier = Modifier.size(72.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Mode Chasse (Find Phone) 🎯",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    fontSize = 18.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Sélectionnez un appareil ci-dessous pour le traquer en temps réel grâce à son signal radio.",
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Show list of active devices to quickly start hunting
+                Text(
+                    text = "Appareils Disponibles à Proximité :",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .align(Alignment.Start)
+                        .padding(start = 12.dp, bottom = 8.dp)
+                )
+
+                if (detectedDevices.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                            .background(DarkSurface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Aucun appareil détecté pour le moment", color = TextSecondary, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(detectedDevices) { device ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.startHunting(device) },
+                                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                                border = BorderStroke(1.dp, CardBorder)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                            tint = if (device.isKnown) NeonGreen else TextSecondary,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(device.alias ?: device.name ?: "Appareil Inconnu", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 14.sp)
+                                            Text("RSSI: ${device.rssi} dBm", color = TextSecondary, fontSize = 11.sp)
+                                        }
+                                    }
+                                    Icon(imageVector = Icons.Default.ArrowForwardIos, tint = NeonGreen, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            val device = huntingDevice!!
+            
+            // We have a target being hunted!
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Target Header card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(NeonGreen.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                contentDescription = null,
+                                tint = NeonGreen,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(device.alias ?: device.name ?: "Cible de Chasse", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 16.sp)
+                            Text("ID: ${device.identifier}", fontSize = 11.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(if (huntSignalLost) WarmRed.copy(alpha = 0.15f) else NeonGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (huntSignalLost) "PERDU" else "ACTIF",
+                                color = if (huntSignalLost) WarmRed else NeonGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Immersive Pulsing Target Widget
+                Box(
+                    modifier = Modifier
+                        .size(240.dp)
+                        .background(Brush.radialGradient(listOf(DarkSurface, ObsidianBg)), CircleShape)
+                        .border(1.dp, CardBorder, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!huntSignalLost) {
+                        // Drawing animated pulse ring
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            drawCircle(
+                                color = NeonGreen.copy(alpha = pulseAlpha),
+                                radius = (size.width / 2) * pulseScale,
+                                center = Offset(size.width / 2, size.height / 2),
+                                style = Stroke(width = 2.dp.toPx())
+                            )
+                        }
+                    }
+
+                    // Foreground circular status meter
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (huntSignalLost) "Recherche..." else huntDistanceText,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 32.sp,
+                            color = if (huntSignalLost) TextSecondary else when (huntDistanceText) {
+                                "Brûlant ! 🔥" -> WarmRed
+                                "Chaud ☀️" -> OrangeAccent
+                                "Tiède 🌤" -> NeonCyan
+                                else -> TextSecondary
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (huntSignalLost) "Pas de signal" else "${device.rssi} dBm",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Distance estimée : ${if (huntSignalLost) "---" else String.format("%.1fm", device.estimatedDistanceMeters)}",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Trend display card
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                        border = BorderStroke(1.dp, CardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Tendance Signal", fontSize = 11.sp, color = TextSecondary)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (huntSignalLost) "Inconnue" else huntRssiTrend,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = if (huntSignalLost) TextSecondary else when {
+                                    huntRssiTrend.contains("approche") -> NeonGreen
+                                    huntRssiTrend.contains("éloigne") -> WarmRed
+                                    else -> TextPrimary
+                                }
+                            )
+                        }
+                    }
+
+                    // Floor tracking card
+                    val knownDevices by viewModel.knownDevices.collectAsStateWithLifecycle()
+                    val savedKnown = knownDevices.find { it.identifier == device.identifier }
+                    val targetFloor = savedKnown?.floor ?: 0
+
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                        border = BorderStroke(1.dp, CardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Étage de l'appareil", fontSize = 11.sp, color = TextSecondary)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (savedKnown == null) "Non configuré" else if (targetFloor == 0) "RDC (0)" else "Étage $targetFloor",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = NeonCyan
+                            )
+                        }
+                    }
+                }
+
+                // Interactive Guidance Tip Bar
+                Spacer(modifier = Modifier.height(16.dp))
+                val knownDevices by viewModel.knownDevices.collectAsStateWithLifecycle()
+                val savedKnown = knownDevices.find { it.identifier == device.identifier }
+                val targetFloor = savedKnown?.floor ?: 0
+                val floorDiff = targetFloor - currentFloor
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, CardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = NeonCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = when {
+                                huntSignalLost -> "Déplacez-vous doucement pour retrouver l'émission de la cible."
+                                savedKnown == null -> "Pour plus de précision, enregistrez cet appareil pour comparer les étages."
+                                floorDiff == 0 -> "🎯 Vous êtes au même étage ! Suivez la force du signal (dBm)."
+                                floorDiff > 0 -> "↕️ L'appareil se trouve au-dessus de vous (+${floorDiff} étage${if (floorDiff > 1) "s" else ""}). Montez !"
+                                else -> "↕️ L'appareil se trouve au-dessous de vous (${floorDiff} étage${if (floorDiff < -1) "s" else ""}). Descendez !"
+                            },
+                            fontSize = 11.sp,
+                            color = TextPrimary
+                        )
+                    }
+                }
+            }
+
+            // Bottom Stop Hunt Button
+            Button(
+                onClick = { viewModel.stopHunting() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = WarmRed),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Cancel, contentDescription = null, tint = TextPrimary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Arrêter la Chasse", color = TextPrimary, fontWeight = FontWeight.Bold)
             }
         }
     }
