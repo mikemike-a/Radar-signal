@@ -11,7 +11,7 @@
 .DS_Store
 /captures
 /build
-#.externalNativeBuild
+.externalNativeBuild
 .cxx
 local.properties
 .env
