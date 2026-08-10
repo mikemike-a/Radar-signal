@@ -22,6 +22,7 @@ class PresenceService : Service() {
         const val ACTION_START_SCAN = "com.example.action.START_SCAN"
         const val ACTION_STOP_SCAN = "com.example.action.STOP_SCAN"
         const val NOTIFICATION_CHANNEL_ID = "presence_radar_service_channel"
+        const val NOTIFICATION_ALERT_CHANNEL_ID = "presence_radar_alert_channel"
         const val NOTIFICATION_ID = 4124
         
         private val isServiceRunning = AtomicBoolean(false)
@@ -44,8 +45,18 @@ class PresenceService : Service() {
         super.onCreate()
         Log.d(TAG, "PresenceService Created")
         isServiceRunning.set(true)
-        createNotificationChannel()
+        createNotificationChannels()
         scanner = PresenceScanner(applicationContext, serviceScope)
+        observeScanner()
+    }
+
+    private fun observeScanner() {
+        serviceScope.launch {
+            scanner?.detectedDevices?.collect { devices ->
+                val knownCount = devices.count { it.isKnown }
+                updateForegroundNotification(devices.size, knownCount)
+            }
+        }
     }
 
     @SuppressLint("ForegroundServiceType")
@@ -72,25 +83,7 @@ class PresenceService : Service() {
     }
 
     private fun startForegroundNotification() {
-        val notificationIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Radar de Présence Actif")
-            .setContentText("Recherche en arrière-plan d'appareils BLE et réseaux Wi-Fi...")
-            .setSmallIcon(android.R.drawable.ic_menu_search)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        val notification = buildServiceNotification(0, 0)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
@@ -108,17 +101,78 @@ class PresenceService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
+    fun updateForegroundNotification(totalDevices: Int, knownDevices: Int) {
+        if (!isServiceRunning.get()) return
+        val notification = buildServiceNotification(totalDevices, knownDevices)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun buildServiceNotification(totalDevices: Int, knownDevices: Int): Notification {
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            notificationIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val stopIntent = Intent(this, PresenceService::class.java).apply {
+            action = ACTION_STOP_SCAN
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val textContent = if (totalDevices == 0) {
+            "Recherche en arrière-plan d'appareils BLE et Wi-Fi..."
+        } else {
+            "Radar actif • $totalDevices appareil(s) à portée ($knownDevices enregistré(s))"
+        }
+
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Radar de Présence Actif 🛰️")
+            .setContentText(textContent)
+            .setSmallIcon(android.R.drawable.ic_menu_search)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(android.R.drawable.ic_media_pause, "Arrêter le scan", stopPendingIntent)
+            .build()
+    }
+
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+
+            // Channel 1: Persistent Service Status
             val serviceChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Radar de Présence Service",
+                "Statut du Radar (Arrière-plan)",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Notification persistante pour la recherche d'appareils à proximité."
+                description = "Notification de statut indiquant que le scan d'arrière-plan est actif."
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
+            manager.createNotificationChannel(serviceChannel)
+
+            // Channel 2: High Priority Arrival & Anti-oubli Alerts
+            val alertChannel = NotificationChannel(
+                NOTIFICATION_ALERT_CHANNEL_ID,
+                "Alertes d'Arrivée & Anti-Oubli 🚨",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alertes prioritaires lorsqu'un appareil connu entre ou quitte le périmètre."
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 300, 150, 300)
+                enableLights(true)
+            }
+            manager.createNotificationChannel(alertChannel)
         }
     }
 

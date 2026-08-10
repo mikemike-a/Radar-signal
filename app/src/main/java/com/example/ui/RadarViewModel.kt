@@ -270,6 +270,39 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     }
 
     // Settings actions
+    fun sendTestNotification(isDeparture: Boolean) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+
+        val title = if (isDeparture) "Alerte Anti-oubli (Test) 🚨" else "Appareil détecté (Test) 🔔"
+        val message = if (isDeparture) {
+            "Votre appareil enregistré de test a quitté le champ de détection !"
+        } else {
+            "Votre appareil enregistré de test est désormais à portée de votre radar."
+        }
+
+        val intent = Intent(context, com.example.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            9999,
+            intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = androidx.core.app.NotificationCompat.Builder(context, PresenceService.NOTIFICATION_ALERT_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setAutoCancel(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify((System.currentTimeMillis() % 10000).toInt(), notification)
+    }
+
     fun updateRssiThreshold(value: Int) {
         _rssiThreshold.value = value
         applyScannerSettings()

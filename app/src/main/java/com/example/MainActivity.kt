@@ -39,6 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +47,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -508,20 +512,50 @@ fun RadarScreen(viewModel: RadarViewModel) {
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
     var showAddAliasDialog by remember { mutableStateOf<DetectedDevice?>(null) }
+    var isFullScreenRadarOpen by remember { mutableStateOf(false) }
+
+    if (isFullScreenRadarOpen) {
+        FullScreenRadarDialog(
+            isScanning = isScanning,
+            devices = detectedDevices,
+            viewModel = viewModel,
+            onDismiss = { isFullScreenRadarOpen = false }
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Custom interactive canvas Radar widget
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(230.dp)
                 .background(Brush.verticalGradient(listOf(ObsidianBg, DarkSurface))),
             contentAlignment = Alignment.Center
         ) {
             RadarVisualizerWidget(
                 isScanning = isScanning,
-                devices = detectedDevices
+                devices = detectedDevices,
+                modifier = Modifier.size(200.dp),
+                onDeviceClick = { clickedDevice ->
+                    viewModel.startHunting(clickedDevice)
+                }
             )
+
+            // Fullscreen toggle button
+            IconButton(
+                onClick = { isFullScreenRadarOpen = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(DarkSurface.copy(alpha = 0.85f), CircleShape)
+                    .border(1.dp, NeonGreen.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fullscreen,
+                    contentDescription = "Radar Plein Écran",
+                    tint = NeonGreen
+                )
+            }
         }
 
         // Baromètre & Altimètre
@@ -749,105 +783,395 @@ fun RadarScreen(viewModel: RadarViewModel) {
     }
 }
 
-// --- Radial Sweeping Radar Widget ---
+// --- Radial Sweeping Radar Widget with Meter Scale & Sweeping Cone ---
 @Composable
-fun RadarVisualizerWidget(isScanning: Boolean, devices: List<DetectedDevice>) {
-    val infiniteTransition = rememberInfiniteTransition()
+fun RadarVisualizerWidget(
+    isScanning: Boolean,
+    devices: List<DetectedDevice>,
+    modifier: Modifier = Modifier.size(200.dp),
+    showLabels: Boolean = false,
+    selectedDevice: DetectedDevice? = null,
+    onDeviceClick: ((DetectedDevice) -> Unit)? = null
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "radarSweep")
     
-    // Smooth angle animation for sweeping radar line
+    // Smooth continuous angle animation for sweeping radar line
     val sweepAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
+            animation = tween(3500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
-        )
+        ),
+        label = "sweepAngle"
     )
 
-    // Pulse circles animation
+    // Continuous pulse circle animation
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
+        initialValue = 0.15f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = EaseOutQuad),
+            animation = tween(2200, easing = EaseOutQuad),
             repeatMode = RepeatMode.Restart
-        )
+        ),
+        label = "pulseScale"
     )
 
-    Canvas(modifier = Modifier.size(190.dp)) {
+    // Store locations of rendered device blips for click detection
+    val blipLocations = remember { mutableStateListOf<Pair<DetectedDevice, Offset>>() }
+
+    Canvas(
+        modifier = modifier.pointerInput(devices) {
+            detectTapGestures { tapOffset ->
+                onDeviceClick?.let { onClick ->
+                    val clicked = blipLocations.minByOrNull { (_, pos) ->
+                        val dx = pos.x - tapOffset.x
+                        val dy = pos.y - tapOffset.y
+                        dx * dx + dy * dy
+                    }
+                    if (clicked != null) {
+                        val dx = clicked.second.x - tapOffset.x
+                        val dy = clicked.second.y - tapOffset.y
+                        if (dx * dx + dy * dy < 40.dp.toPx() * 40.dp.toPx()) {
+                            onClick(clicked.first)
+                        }
+                    }
+                }
+            }
+        }
+    ) {
         val center = Offset(size.width / 2, size.height / 2)
         val maxRadius = size.width / 2
+        val densityVal = density
 
-        // Draw pulsing beacon glow in the background
-        if (isScanning) {
-            drawCircle(
-                color = NeonGreen.copy(alpha = 0.15f * (1f - pulseScale)),
-                radius = maxRadius * pulseScale,
-                center = center
-            )
-        }
+        blipLocations.clear()
 
-        // Draw static grid rings
-        drawCircle(color = CardBorder, radius = maxRadius, center = center, style = Stroke(width = 1.dp.toPx()))
-        drawCircle(color = CardBorder, radius = maxRadius * 0.66f, center = center, style = Stroke(width = 1.dp.toPx()))
-        drawCircle(color = CardBorder, radius = maxRadius * 0.33f, center = center, style = Stroke(width = 1.dp.toPx()))
+        // 1. Draw pulsing beacon glow in the background
+        drawCircle(
+            color = NeonGreen.copy(alpha = 0.18f * (1f - pulseScale)),
+            radius = maxRadius * pulseScale,
+            center = center
+        )
 
-        // Draw crosshair axes
+        // 2. Draw crosshair axes
         drawLine(
-            color = CardBorder,
+            color = CardBorder.copy(alpha = 0.8f),
             start = Offset(0f, center.y),
             end = Offset(size.width, center.y),
             strokeWidth = 1.dp.toPx()
         )
         drawLine(
-            color = CardBorder,
+            color = CardBorder.copy(alpha = 0.8f),
             start = Offset(center.x, 0f),
             end = Offset(center.x, size.height),
             strokeWidth = 1.dp.toPx()
         )
 
-        // Draw sweeping radar line
-        if (isScanning) {
-            val sweepRad = Math.toRadians(sweepAngle.toDouble())
-            val endX = center.x + maxRadius * cos(sweepRad).toFloat()
-            val endY = center.y + maxRadius * sin(sweepRad).toFloat()
+        // 3. Distance Scale Rings in Meters (1m, 3m, 5m, 10m, 15m)
+        val textPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#9CA3AF")
+            textSize = densityVal * 9f
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
 
-            // Draw primary sweep line
-            drawLine(
-                color = NeonGreen.copy(alpha = 0.8f),
-                start = center,
-                end = Offset(endX, endY),
-                strokeWidth = 2.dp.toPx()
+        val maxMeters = 15f
+        val ringDistances = listOf(1f, 3f, 5f, 10f, 15f)
+
+        ringDistances.forEach { meters ->
+            val ringRadius = maxRadius * (meters / maxMeters).coerceAtMost(1f)
+            drawCircle(
+                color = CardBorder,
+                radius = ringRadius,
+                center = center,
+                style = Stroke(width = 1.dp.toPx())
+            )
+
+            // Draw meter label along vertical axis
+            drawContext.canvas.nativeCanvas.drawText(
+                "${meters.toInt()}m",
+                center.x,
+                (center.y - ringRadius + densityVal * 10f).coerceAtLeast(densityVal * 12f),
+                textPaint
             )
         }
 
-        // Map devices to the canvas as glowing beacons
+        // 4. Draw sweeping radar cone & line
+        val sweepRad = Math.toRadians(sweepAngle.toDouble())
+        val endX = center.x + maxRadius * cos(sweepRad).toFloat()
+        val endY = center.y + maxRadius * sin(sweepRad).toFloat()
+
+        // Sweeping trailing arc / cone
+        val conePath = androidx.compose.ui.graphics.Path().apply {
+            moveTo(center.x, center.y)
+            arcTo(
+                rect = androidx.compose.ui.geometry.Rect(
+                    center.x - maxRadius,
+                    center.y - maxRadius,
+                    center.x + maxRadius,
+                    center.y + maxRadius
+                ),
+                startAngleDegrees = sweepAngle - 45f,
+                sweepAngleDegrees = 45f,
+                forceMoveTo = false
+            )
+            close()
+        }
+
+        drawPath(
+            path = conePath,
+            brush = Brush.radialGradient(
+                colors = listOf(NeonGreen.copy(alpha = 0.35f), NeonGreen.copy(alpha = 0.05f), Color.Transparent),
+                center = center,
+                radius = maxRadius
+            )
+        )
+
+        // Primary glowing sweep line
+        drawLine(
+            color = NeonGreen,
+            start = center,
+            end = Offset(endX, endY),
+            strokeWidth = 2.5.dp.toPx()
+        )
+
+        // Center origin dot
+        drawCircle(color = NeonGreen, radius = 3.5.dp.toPx(), center = center)
+
+        // 5. Map devices to the canvas as glowing beacons using estimated distance
+        val beaconPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#F9FAFB")
+            textSize = densityVal * 10f
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+
         devices.forEach { device ->
-            // Use stable hashcode of identifier to locate device at a fixed random angle
             val angleDeg = (device.identifier.hashCode() % 360).toDouble()
             val angleRad = Math.toRadians(angleDeg)
 
-            // Convert RSSI to normalized distance from center (clamped between -40 dBm and -100 dBm)
-            val clampedRssi = device.rssi.coerceIn(-100, -40)
-            val normalizedDist = (100 + clampedRssi) / 60.0 // 0f (far) to 1f (close)
-            val finalRadius = maxRadius * (1f - normalizedDist.toFloat() * 0.85f).coerceIn(0.1f, 0.95f)
+            val distance = device.estimatedDistanceMeters.toFloat().coerceIn(0.5f, maxMeters)
+            val normalizedRatio = (distance / maxMeters).coerceIn(0.08f, 0.95f)
+            val finalRadius = maxRadius * normalizedRatio
 
             val x = center.x + finalRadius * cos(angleRad).toFloat()
             val y = center.y + finalRadius * sin(angleRad).toFloat()
+            val blipOffset = Offset(x, y)
 
-            val beaconColor = if (device.isKnown) NeonGreen else NeonCyan
-            
-            // Glowing effect
+            blipLocations.add(device to blipOffset)
+
+            val isSelected = selectedDevice?.identifier == device.identifier
+            val beaconColor = if (isSelected) WarmRed else if (device.isKnown) NeonGreen else NeonCyan
+
+            // Glowing outer ring
             drawCircle(
-                color = beaconColor.copy(alpha = 0.3f),
-                radius = 8.dp.toPx(),
-                center = Offset(x, y)
+                color = beaconColor.copy(alpha = if (isSelected) 0.5f else 0.3f),
+                radius = if (isSelected) 12.dp.toPx() else 8.dp.toPx(),
+                center = blipOffset
             )
+            // Solid center beacon
             drawCircle(
                 color = beaconColor,
-                radius = 4.dp.toPx(),
-                center = Offset(x, y)
+                radius = if (isSelected) 6.dp.toPx() else 4.dp.toPx(),
+                center = blipOffset
             )
+
+            // Draw text labels if showLabels is true or selected
+            if (showLabels || isSelected) {
+                val labelText = "${device.alias ?: device.name ?: "Appareil"} (${String.format("%.1fm", device.estimatedDistanceMeters)})"
+                drawContext.canvas.nativeCanvas.drawText(
+                    labelText,
+                    x,
+                    (y - densityVal * 8f),
+                    beaconPaint
+                )
+            }
+        }
+    }
+}
+
+// --- FULLSCREEN RADAR DIALOG COMPOSABLE ---
+@Composable
+fun FullScreenRadarDialog(
+    isScanning: Boolean,
+    devices: List<DetectedDevice>,
+    viewModel: RadarViewModel,
+    onDismiss: () -> Unit
+) {
+    var selectedDevice by remember { mutableStateOf<DetectedDevice?>(null) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(ObsidianBg),
+            color = ObsidianBg
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top Action Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Radar,
+                            contentDescription = null,
+                            tint = NeonGreen,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Radar Plein Écran 🛰️",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Échelle en mètres (1m à 15m) • ${devices.size} appareils",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .background(DarkSurface, CircleShape)
+                            .border(1.dp, CardBorder, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Fermer",
+                            tint = TextPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Large Fullscreen Radar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Brush.radialGradient(listOf(DarkSurface, ObsidianBg)), RoundedCornerShape(20.dp))
+                        .border(1.dp, CardBorder, RoundedCornerShape(20.dp))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    RadarVisualizerWidget(
+                        isScanning = isScanning,
+                        devices = devices,
+                        modifier = Modifier.fillMaxSize(),
+                        showLabels = true,
+                        selectedDevice = selectedDevice,
+                        onDeviceClick = { clicked -> selectedDevice = clicked }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Target Details Bottom Sheet/Card if a blip is selected
+                if (selectedDevice != null) {
+                    val device = selectedDevice!!
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                        border = BorderStroke(1.dp, NeonGreen)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (device.type == "WIFI") Icons.Default.Wifi else Icons.Default.Bluetooth,
+                                        contentDescription = null,
+                                        tint = NeonGreen,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = device.alias ?: device.name ?: "Appareil Détecté",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                Text(
+                                    text = String.format("%.1f mètres", device.estimatedDistanceMeters),
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeonCyan,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "ID : ${device.identifier} • RSSI : ${device.rssi} dBm",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.startHunting(device)
+                                        onDismiss()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonGreen)
+                                ) {
+                                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Chasser", color = ObsidianBg, fontWeight = FontWeight.Bold)
+                                }
+
+                                if (!device.isKnown) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.addKnownDevice(
+                                                identifier = device.identifier,
+                                                alias = device.name ?: "Appareil ${device.type}",
+                                                type = device.type
+                                            )
+                                        },
+                                        border = BorderStroke(1.dp, NeonCyan)
+                                    ) {
+                                        Text("Sauvegarder", color = NeonCyan)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "💡 Touchez n'importe quel point lumineux du radar pour voir les détails de l'appareil",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -1805,13 +2129,53 @@ fun HuntScreen(viewModel: RadarViewModel) {
                         .border(1.dp, CardBorder, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!huntSignalLost) {
-                        // Drawing animated pulse ring
-                        Canvas(modifier = Modifier.fillMaxSize()) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val center = Offset(size.width / 2, size.height / 2)
+                        val maxR = size.width / 2
+                        val maxMeters = 15f
+                        val densityVal = density
+                        val textPaint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.parseColor("#6B7280")
+                            textSize = densityVal * 8f
+                            isAntiAlias = true
+                            textAlign = android.graphics.Paint.Align.CENTER
+                        }
+
+                        listOf(2f, 5f, 10f, 15f).forEach { meters ->
+                            val r = maxR * (meters / maxMeters)
+                            drawCircle(
+                                color = CardBorder.copy(alpha = 0.6f),
+                                radius = r,
+                                center = center,
+                                style = Stroke(width = 1.dp.toPx())
+                            )
+                            drawContext.canvas.nativeCanvas.drawText(
+                                "${meters.toInt()}m",
+                                center.x,
+                                center.y - r + densityVal * 9f,
+                                textPaint
+                            )
+                        }
+
+                        if (!huntSignalLost) {
+                            val targetDistance = device.estimatedDistanceMeters.toFloat().coerceIn(0.5f, maxMeters)
+                            val targetR = maxR * (targetDistance / maxMeters).coerceIn(0.1f, 0.95f)
+                            drawCircle(
+                                color = NeonGreen.copy(alpha = 0.4f),
+                                radius = 10.dp.toPx(),
+                                center = Offset(center.x, center.y - targetR)
+                            )
+                            drawCircle(
+                                color = NeonGreen,
+                                radius = 5.dp.toPx(),
+                                center = Offset(center.x, center.y - targetR)
+                            )
+
+                            // Drawing animated pulse ring
                             drawCircle(
                                 color = NeonGreen.copy(alpha = pulseAlpha),
                                 radius = (size.width / 2) * pulseScale,
-                                center = Offset(size.width / 2, size.height / 2),
+                                center = center,
                                 style = Stroke(width = 2.dp.toPx())
                             )
                         }
@@ -2146,6 +2510,7 @@ fun SettingsScreen(viewModel: RadarViewModel) {
     val rssiVal by viewModel.rssiThreshold.collectAsStateWithLifecycle()
     val powerSaverEnabled by viewModel.isPowerSaver.collectAsStateWithLifecycle()
     val departureSecs by viewModel.departureDelaySec.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier
@@ -2165,6 +2530,118 @@ fun SettingsScreen(viewModel: RadarViewModel) {
                 fontSize = 13.sp,
                 color = TextSecondary
             )
+        }
+
+        // Section Foreground Service Control
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = BorderStroke(1.dp, if (isScanning) NeonGreen else CardBorder)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Radar,
+                                contentDescription = null,
+                                tint = if (isScanning) NeonGreen else TextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Suivi en Arrière-plan (Service)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = if (isScanning) "Actif • Notification permanente" else "Inactif",
+                                    fontSize = 12.sp,
+                                    color = if (isScanning) NeonGreen else TextSecondary
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isScanning,
+                            onCheckedChange = { viewModel.toggleScanning(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = ObsidianBg,
+                                checkedTrackColor = NeonGreen
+                            ),
+                            modifier = Modifier.testTag("service_toggle_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Permet de scruter le Bluetooth LE & Wi-Fi en permanence en arrière-plan, d'envoyer des notifications d'arrivée et des alertes anti-oubli critiques.",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
+        // Section Notifications Test
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                border = BorderStroke(1.dp, CardBorder)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = NeonCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Test des Notifications & Alertes",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = TextPrimary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Testez la réception des notifications push et des alertes sonores/vibrantes sur votre smartphone.",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.sendTestNotification(isDeparture = false) },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, NeonGreen)
+                        ) {
+                            Text("Test Arrivée 🔔", color = NeonGreen, fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.sendTestNotification(isDeparture = true) },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, WarmRed)
+                        ) {
+                            Text("Alerte Anti-Oubli 🚨", color = WarmRed, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
         }
 
         // Section Sliders
