@@ -13,8 +13,7 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
   - Tendance du signal (approche ou éloignement).
   - **Heatmap (Carte thermique locale) :** Construction d'une carte 2D de la force du signal en se déplaçant pour mieux repérer la cible.
 - **Altimètre & Baromètre Intégré :** 
-  - Estimation de l'altitude relative et détection de l'étage (RDC, Étage 1, Sous-sol, etc.) grâce au capteur de pression.
-  - Mode simulateur de pression pour les téléphones dépourvus de capteur barométrique matériel.
+  - Estimation de l'altitude relative et détection de l'étage (RDC, Étage 1, Sous-sol, etc.) grâce au capteur de pression physique.
 - **Gestion des Appareils Connus :** 
   - Sauvegarde d'appareils avec un nom personnalisé (alias).
   - Assignation d'un "étage" de référence à un appareil pour comparer facilement sa position verticale avec celle du téléphone.

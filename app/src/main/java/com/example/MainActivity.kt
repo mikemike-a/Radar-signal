@@ -524,7 +524,7 @@ fun RadarScreen(viewModel: RadarViewModel) {
             )
         }
 
-        // Baromètre & Simulateur Altimètre
+        // Baromètre & Altimètre
         BarometerWidget(viewModel = viewModel)
 
         HorizontalDivider(color = CardBorder, thickness = 1.dp)
@@ -1462,8 +1462,6 @@ fun BarometerWidget(viewModel: RadarViewModel) {
     val referencePressure by viewModel.referencePressure.collectAsStateWithLifecycle()
     val estimatedRelativeAltitude by viewModel.estimatedRelativeAltitude.collectAsStateWithLifecycle()
     val estimatedFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
-    val isSimulatingBarometer by viewModel.isSimulatingBarometer.collectAsStateWithLifecycle()
-    val simulatedPressure by viewModel.simulatedPressure.collectAsStateWithLifecycle()
 
     Card(
         modifier = Modifier
@@ -1552,7 +1550,7 @@ fun BarometerWidget(viewModel: RadarViewModel) {
                 }
             }
 
-            // Reference details info
+            // Reference details info & Status
             Spacer(modifier = Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1565,50 +1563,13 @@ fun BarometerWidget(viewModel: RadarViewModel) {
                     color = TextSecondary
                 )
                 
-                // Sensor status / Toggle simulation
+                // Sensor status
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (isBarometerAvailable) "Capteur Réel" else "Simulation (Manuel)",
+                        text = if (isBarometerAvailable) "Capteur Réel Actif" else "Capteur Non Présent",
                         fontSize = 11.sp,
-                        color = if (isBarometerAvailable && !isSimulatingBarometer) NeonGreen else NeonCyan,
+                        color = if (isBarometerAvailable) NeonGreen else TextSecondary,
                         fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Switch(
-                        checked = isSimulatingBarometer || !isBarometerAvailable,
-                        onCheckedChange = { viewModel.setSimulatingBarometer(it) },
-                        modifier = Modifier.scale(0.7f),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = ObsidianBg,
-                            checkedTrackColor = NeonCyan,
-                            uncheckedThumbColor = TextSecondary,
-                            uncheckedTrackColor = CardBorder
-                        )
-                    )
-                }
-            }
-
-            // Simulated control slider
-            if (isSimulatingBarometer || !isBarometerAvailable) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Ajuster la pression simulée :", fontSize = 11.sp, color = TextSecondary)
-                        Text(String.format("%.1f hPa", simulatedPressure), fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
-                    }
-                    Slider(
-                        value = simulatedPressure,
-                        onValueChange = { viewModel.updateSimulatedPressure(it) },
-                        valueRange = 980f..1040f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = NeonCyan,
-                            activeTrackColor = NeonCyan,
-                            inactiveTrackColor = CardBorder
-                        ),
-                        modifier = Modifier.height(24.dp)
                     )
                 }
             }

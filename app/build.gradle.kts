@@ -63,6 +63,10 @@ android {
   }
 }
 
+base {
+  archivesName.set("PresenceRadar-v1.0-b1")
+}
+
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.
 secrets {

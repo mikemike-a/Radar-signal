@@ -49,15 +49,9 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     private val _estimatedFloor = MutableStateFlow(0) // estimated floor difference
     val estimatedFloor = _estimatedFloor.asStateFlow()
 
-    private val _isSimulatingBarometer = MutableStateFlow(false)
-    val isSimulatingBarometer = _isSimulatingBarometer.asStateFlow()
-
-    private val _simulatedPressure = MutableStateFlow(1013.25f)
-    val simulatedPressure = _simulatedPressure.asStateFlow()
-
     private val pressureListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent?) {
-            if (event?.sensor?.type == Sensor.TYPE_PRESSURE && !_isSimulatingBarometer.value) {
+            if (event?.sensor?.type == Sensor.TYPE_PRESSURE) {
                 val pressure = event.values[0]
                 updatePressureMetrics(pressure)
             }
@@ -324,24 +318,6 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         val current = _currentPressure.value ?: 1013.25f
         _referencePressure.value = current
         updatePressureMetrics(current)
-    }
-
-    fun setSimulatingBarometer(enabled: Boolean) {
-        _isSimulatingBarometer.value = enabled
-        if (enabled) {
-            updatePressureMetrics(_simulatedPressure.value)
-        } else {
-            val real = _currentPressure.value ?: 1013.25f
-            updatePressureMetrics(real)
-        }
-    }
-
-    fun updateSimulatedPressure(pressure: Float) {
-        _simulatedPressure.value = pressure
-        if (_isSimulatingBarometer.value || !_isBarometerAvailable.value) {
-            _currentPressure.value = pressure
-            updatePressureMetrics(pressure)
-        }
     }
 
     // --- Mode Chasse Methods ---
