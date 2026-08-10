@@ -62,6 +62,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.HistoryEntry
 import com.example.data.KnownDevice
 import com.example.scanning.DetectedDevice
+import com.example.ui.ARFinderScreen
 import com.example.ui.RadarViewModel
 import com.example.ui.RadarViewModelFactory
 import java.text.SimpleDateFormat
@@ -321,7 +322,14 @@ fun MainAppContent(viewModel: RadarViewModel) {
         ) {
             when (activeTabState) {
                 "radar" -> RadarScreen(viewModel = viewModel)
-                "hunt" -> HuntScreen(viewModel = viewModel)
+                "hunt" -> {
+                    val isArMode by viewModel.isArMode.collectAsStateWithLifecycle()
+                    if (isArMode) {
+                        ARFinderScreen(viewModel = viewModel)
+                    } else {
+                        HuntScreen(viewModel = viewModel)
+                    }
+                }
                 "known" -> KnownDevicesScreen(viewModel = viewModel)
                 "history" -> HistoryScreen(viewModel = viewModel)
                 "settings" -> SettingsScreen(viewModel = viewModel)
@@ -2422,14 +2430,11 @@ fun HuntScreen(viewModel: RadarViewModel) {
                             modifier = Modifier.padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Étage de l'appareil", fontSize = 11.sp, color = TextSecondary)
+                            Text("AR Finder", fontSize = 11.sp, color = TextSecondary)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (savedKnown == null) "Non configuré" else if (targetFloor == 0) "RDC (0)" else "Étage $targetFloor",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = NeonCyan
-                            )
+                            IconButton(onClick = { viewModel.toggleArMode(true) }) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = "AR Finder", tint = NeonCyan)
+                            }
                         }
                     }
                 }

@@ -217,6 +217,9 @@ class RadarViewModel(private val context: Context) : ViewModel() {
     private val _isCompassEnabled = MutableStateFlow(prefs.getBoolean("pref_compass_enabled", true))
     val isCompassEnabled = _isCompassEnabled.asStateFlow()
 
+    private val _isArMode = MutableStateFlow(false)
+    val isArMode = _isArMode.asStateFlow()
+
     private var presenceService: PresenceService? = null
     private var isBound = false
 
@@ -432,6 +435,10 @@ class RadarViewModel(private val context: Context) : ViewModel() {
         _isCompassEnabled.value = enabled
         prefs.edit().putBoolean("pref_compass_enabled", enabled).apply()
         applyCompassRegistration()
+    }
+
+    fun toggleArMode(enabled: Boolean) {
+        _isArMode.value = enabled
     }
 
     private fun initCompass() {

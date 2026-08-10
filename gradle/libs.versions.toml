@@ -1,4 +1,6 @@
 [versions]
+sceneview = "0.10.0"
+arcore = "1.47.0"
 agp = "9.1.1"
 coreKtx = "1.18.0"
 junit = "4.13.2"
@@ -45,6 +47,8 @@ googleid = "1.1.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+arsceneview = { group = "io.github.sceneview", name = "arsceneview", version.ref = "sceneview" }
+arcore-client = { group = "com.google.ar", name = "core", version.ref = "arcore" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
