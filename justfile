@@ -6,11 +6,11 @@ default:
 
 # Compile l'application complète en mode Debug et génère le fichier APK
 build:
-    gradle assembleDebug
+    gradle :app:assembleDebug
 
 # Compile rapidement le code Kotlin du projet pour vérifier l'absence d'erreurs de syntaxe ou de type
 compile:
-    gradle compileDebugKotlin
+    gradle :app:compileDebugKotlin
 
 # Exécute tous les tests unitaires locaux (JUnit & Robolectric) sur la JVM
 test:
@@ -30,4 +30,4 @@ clean:
 
 # Installe l'APK de Debug compilé sur l'émulateur ou l'appareil physique connecté
 install:
-    gradle installDebug
+    gradle :app:installDebug

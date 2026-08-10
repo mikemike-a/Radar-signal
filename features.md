@@ -11,6 +11,7 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
   - Indicateur visuel à impulsion (pulsing ring) dont la vitesse s'adapte à la distance.
   - Estimation de la distance en mètres via la force du signal (RSSI).
   - Tendance du signal (approche ou éloignement).
+  - **Heatmap (Carte thermique locale) :** Construction d'une carte 2D de la force du signal en se déplaçant pour mieux repérer la cible.
 - **Altimètre & Baromètre Intégré :** 
   - Estimation de l'altitude relative et détection de l'étage (RDC, Étage 1, Sous-sol, etc.) grâce au capteur de pression.
   - Mode simulateur de pression pour les téléphones dépourvus de capteur barométrique matériel.
@@ -35,7 +36,6 @@ Voici une liste d'idées pour transformer cet outil en un véritable couteau sui
 - **Boussole Magnétique :** Combiner l'accéléromètre, le gyroscope et le magnétomètre pour orienter l'utilisateur (si l'appareil ciblé supporte la radiogoniométrie / Bluetooth Direction Finding 5.1+).
 
 ### 3. Cartographie & Triangulation
-- **Heatmap (Carte thermique locale) :** Demander à l'utilisateur de se déplacer dans la pièce pour construire une carte 2D de la force du signal, permettant de "voir" les ondes à travers les murs.
 - **Triangulation collaborative :** Si plusieurs personnes utilisent l'application dans la même zone, fusionner leurs données RSSI en temps réel pour trianguler la position exacte de la cible sur une carte.
 
 ### 4. Partage & Cloud
