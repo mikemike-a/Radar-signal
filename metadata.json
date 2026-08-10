@@ -1,0 +1,6 @@
+{
+  "name": "Presence Radar",
+  "description": "Détecteur de présence local basé sur le Bluetooth Low Energy (BLE) et le Wi-Fi scanning avec gestion de batterie optimisée.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
