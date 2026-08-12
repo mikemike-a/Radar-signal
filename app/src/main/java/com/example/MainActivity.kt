@@ -46,6 +46,8 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -840,32 +842,46 @@ fun RadarVisualizerWidget(
     selectedDevice: DetectedDevice? = null,
     onDeviceClick: ((DetectedDevice) -> Unit)? = null
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "radarSweep")
-    
-    // Smooth continuous angle animation for sweeping radar line
-    val sweepAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "sweepAngle"
-    )
+    var sweepAngle by remember { mutableFloatStateOf(0f) }
+    var pulseScale by remember { mutableFloatStateOf(0.15f) }
 
-    // Continuous pulse circle animation
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = EaseOutQuad),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulseScale"
-    )
+    // Robust timer loop immune to system animation duration scale / battery saver restrictions on Android 10
+    LaunchedEffect(isScanning) {
+        if (isScanning) {
+            val startTime = android.os.SystemClock.uptimeMillis()
+            while (true) {
+                val elapsed = android.os.SystemClock.uptimeMillis() - startTime
+                sweepAngle = ((elapsed % 3500) / 3500f) * 360f
+                val pulseProgress = (elapsed % 2200) / 2200f
+                pulseScale = 0.15f + 0.85f * (1f - (1f - pulseProgress) * (1f - pulseProgress))
+                delay(16)
+            }
+        } else {
+            sweepAngle = 0f
+            pulseScale = 0.15f
+        }
+    }
 
     // Store locations of rendered device blips for click detection
     val blipLocations = remember { mutableStateListOf<Pair<DetectedDevice, Offset>>() }
+
+    // Reusable Paint objects to avoid GC frame drops on real Android 10 hardware
+    val meterTextPaint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#9CA3AF")
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+    }
+
+    val beaconTextPaint = remember {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#F9FAFB")
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+            isFakeBoldText = true
+        }
+    }
 
     Canvas(
         modifier = modifier.pointerInput(devices) {
@@ -895,7 +911,7 @@ fun RadarVisualizerWidget(
 
         // 1. Draw pulsing beacon glow in the background
         drawCircle(
-            color = NeonGreen.copy(alpha = 0.18f * (1f - pulseScale)),
+            color = NeonGreen.copy(alpha = (0.22f * (1f - pulseScale)).coerceIn(0f, 0.22f)),
             radius = maxRadius * pulseScale,
             center = center
         )
@@ -915,12 +931,7 @@ fun RadarVisualizerWidget(
         )
 
         // 3. Distance Scale Rings in Meters (1m, 3m, 5m, 10m, 15m)
-        val textPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#9CA3AF")
-            textSize = densityVal * 9f
-            isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
+        meterTextPaint.textSize = densityVal * 9f
 
         val maxMeters = 15f
         val ringDistances = listOf(1f, 3f, 5f, 10f, 15f)
@@ -939,7 +950,7 @@ fun RadarVisualizerWidget(
                 "${meters.toInt()}m",
                 center.x,
                 (center.y - ringRadius + densityVal * 10f).coerceAtLeast(densityVal * 12f),
-                textPaint
+                meterTextPaint
             )
         }
 
@@ -948,30 +959,18 @@ fun RadarVisualizerWidget(
         val endX = center.x + maxRadius * cos(sweepRad).toFloat()
         val endY = center.y + maxRadius * sin(sweepRad).toFloat()
 
-        // Sweeping trailing arc / cone
-        val conePath = androidx.compose.ui.graphics.Path().apply {
-            moveTo(center.x, center.y)
-            arcTo(
-                rect = androidx.compose.ui.geometry.Rect(
-                    center.x - maxRadius,
-                    center.y - maxRadius,
-                    center.x + maxRadius,
-                    center.y + maxRadius
-                ),
-                startAngleDegrees = sweepAngle - 45f,
-                sweepAngleDegrees = 45f,
-                forceMoveTo = false
-            )
-            close()
-        }
-
-        drawPath(
-            path = conePath,
+        // Sweeping trailing arc / cone (Direct GPU hardware accelerated drawArc)
+        drawArc(
             brush = Brush.radialGradient(
                 colors = listOf(NeonGreen.copy(alpha = 0.35f), NeonGreen.copy(alpha = 0.05f), Color.Transparent),
                 center = center,
                 radius = maxRadius
-            )
+            ),
+            startAngle = sweepAngle - 45f,
+            sweepAngle = 45f,
+            useCenter = true,
+            topLeft = Offset(center.x - maxRadius, center.y - maxRadius),
+            size = androidx.compose.ui.geometry.Size(maxRadius * 2f, maxRadius * 2f)
         )
 
         // Primary glowing sweep line
@@ -986,13 +985,7 @@ fun RadarVisualizerWidget(
         drawCircle(color = NeonGreen, radius = 3.5.dp.toPx(), center = center)
 
         // 5. Map devices to the canvas as glowing beacons using estimated distance
-        val beaconPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#F9FAFB")
-            textSize = densityVal * 10f
-            isAntiAlias = true
-            textAlign = android.graphics.Paint.Align.CENTER
-            isFakeBoldText = true
-        }
+        beaconTextPaint.textSize = densityVal * 10f
 
         devices.forEach { device ->
             val angleDeg = (device.identifier.hashCode() % 360).toDouble()
@@ -1031,7 +1024,7 @@ fun RadarVisualizerWidget(
                     labelText,
                     x,
                     (y - densityVal * 8f),
-                    beaconPaint
+                    beaconTextPaint
                 )
             }
         }
@@ -1988,9 +1981,6 @@ fun HuntScreen(viewModel: RadarViewModel) {
     val currentFloor by viewModel.estimatedFloor.collectAsStateWithLifecycle()
     val detectedDevices by viewModel.detectedDevices.collectAsStateWithLifecycle()
 
-    // Animation for pulsing radar ring
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    
     // Smooth pulse speed adjusting automatically to distance!
     val pulseDuration = remember(huntDistanceProgress) {
         val baseDuration = 1800
@@ -1998,25 +1988,24 @@ fun HuntScreen(viewModel: RadarViewModel) {
         (baseDuration - reduction).coerceIn(400, 1800)
     }
 
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1.3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = pulseDuration, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulseScale"
-    )
+    var pulseScale by remember { mutableFloatStateOf(0.6f) }
+    var pulseAlpha by remember { mutableFloatStateOf(0.8f) }
 
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = pulseDuration, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulseAlpha"
-    )
+    LaunchedEffect(huntingDevice, pulseDuration) {
+        if (huntingDevice != null) {
+            val startTime = android.os.SystemClock.uptimeMillis()
+            while (true) {
+                val elapsed = android.os.SystemClock.uptimeMillis() - startTime
+                val progress = (elapsed % pulseDuration) / pulseDuration.toFloat()
+                pulseScale = 0.6f + 0.7f * progress
+                pulseAlpha = (0.8f * (1f - progress)).coerceIn(0f, 0.8f)
+                delay(16)
+            }
+        } else {
+            pulseScale = 0.6f
+            pulseAlpha = 0f
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -2875,16 +2864,20 @@ fun SettingsScreen(viewModel: RadarViewModel) {
 
         // Section Balise d'Urgence SOS (Sauvetage)
         item {
-            val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "sos_pulse")
-            val pulseAlpha by infiniteTransition.animateFloat(
-                initialValue = 0.4f,
-                targetValue = 1.0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(800, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "pulse_alpha"
-            )
+            var pulseAlpha by remember { mutableFloatStateOf(0.4f) }
+            LaunchedEffect(isBeaconActive) {
+                if (isBeaconActive) {
+                    val startTime = android.os.SystemClock.uptimeMillis()
+                    while (true) {
+                        val elapsed = android.os.SystemClock.uptimeMillis() - startTime
+                        val progress = (elapsed % 800) / 800f
+                        pulseAlpha = 0.4f + 0.6f * (0.5f + 0.5f * kotlin.math.sin(progress * 2 * Math.PI.toFloat()))
+                        delay(16)
+                    }
+                } else {
+                    pulseAlpha = 1.0f
+                }
+            }
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = DarkSurface),

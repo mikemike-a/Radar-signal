@@ -34,6 +34,9 @@ Ce document dresse la liste des fonctionnalités actuellement présentes dans l'
   - Assignation d'un "étage" de référence à un appareil pour comparer facilement sa position verticale avec celle du téléphone.
   - Filtres rapides (Connus, BLE, Wi-Fi, mDNS) pour identifier les appareils familiers parmi tous les signaux ambiants.
 - **Historique & Journal des Événements :** Suivi horodaté et géolocalisé des arrivées et départs d'appareils.
+- **Analyse de sécurité & Diagnostic :**
+  - **Détection de "Stalkers" :** Analyse de l'historique pour alerter l'utilisateur si un appareil inconnu semble suivre l'utilisateur sur de longues distances.
+  - **Outil de diagnostic Wi-Fi :** Analyse de l'encombrement des réseaux Wi-Fi et de la force moyenne du signal pour le diagnostic local.
 - **Boussole Magnétique :** Utilisation des capteurs (accéléromètre, gyroscope, magnétomètre) pour orienter l'utilisateur.
 
 ---
@@ -53,6 +56,5 @@ Voici une liste d'idées pour transformer cet outil en un véritable couteau sui
 - **Synchronisation des Appareils Connus :** Sauvegarder ses trackers et alias sur un compte cloud pour les retrouver sur un autre téléphone (Export/Import JSON local dans un premier temps).
 
 ### 5. Analyse des Signaux & Sécurité
-- **Détection de "Stalkers" :** Analyser l'historique pour alerter l'utilisateur si un appareil inconnu (comme un AirTag ou un tracker BLE) le suit sur de longues distances.
-- **Outil de diagnostic Wi-Fi :** Analyser l'encombrement des canaux Wi-Fi pour aider l'utilisateur à optimiser le placement de son routeur à la maison.
+(Aucune pour le moment)
 
