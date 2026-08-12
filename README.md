@@ -1,6 +1,13 @@
 # Presence Radar 📡
 
-Presence Radar est une application Android native complète, performante et économe en batterie, conçue pour détecter en continu et de manière **100% locale** (sans aucun serveur ni envoi de données) la présence d'appareils Bluetooth Low Energy (BLE) et Wi-Fi connus à proximité.
+Presence Radar est une application Android native complète, performante et économe en batterie, conçue pour détecter en continu et de manière **100% locale** (sans aucun serveur ni envoi de données) la présence d'appareils Bluetooth Low Energy (BLE), Wi-Fi et services réseau mDNS.
+
+🚀 **Fonctionnalités Clés :**
+- **Visualisation Radar Interactive** : Un balayage en temps réel avec estimation de distance (RSSI) et placement spatial des balises (BLE, Wi-Fi, mDNS).
+- **Mode Chasse (Hunt)** : Retrouvez vos objets perdus avec une interface "chaud/froid", une carte thermique (Heatmap) et un **effet Geiger sonore et haptique**.
+- **Balise de Secours SOS** : Transformez votre téléphone en balise de détresse (sirène, flash morse, émission radio BLE SOS) détectable par d'autres utilisateurs en cas d'urgence.
+- **Détection de Stalkers** : Surveillance intelligente de l'historique pour détecter les trackers (AirTags, etc.) qui vous suivraient de manière suspecte.
+- **Diagnostic Réseau & Étages** : Analyse de l'encombrement Wi-Fi et détection de l'étage (RDC, Étage 1) via le baromètre physique du téléphone.
 
 ## 🛠 Choix d'Architecture
 
@@ -12,7 +19,7 @@ L'application est structurée selon les principes de l'architecture **MVVM (Mode
    - `DeviceDao` & `AppDatabase` : Gérés via **Room (SQLite)** de manière asynchrone avec des requêtes réactives renvoyant des `Flow<List<T>>` pour mettre à jour l'interface automatiquement en temps réel.
 
 2. **`com.example.scanning`** (Moteur de Détection) :
-   - `PresenceScanner` : Centralise et synchronise les scans BLE (via `BluetoothLeScanner`) et Wi-Fi (via `WifiManager`).
+   - `PresenceScanner` : Centralise et synchronise les scans BLE (via `BluetoothLeScanner`), Wi-Fi (via `WifiManager`) et services réseau mDNS (via `NsdManager`).
    - Il calcule en continu l'estimation de distance via le RSSI (en utilisant un modèle logarithmique d'affaiblissement du signal) et gère le filtrage de sensibilité dynamique.
    - Il maintient un dictionnaire d'appareils actifs (`ConcurrentHashMap`) mis à jour en arrière-plan de façon thread-safe.
 

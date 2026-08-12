@@ -9,6 +9,15 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Ignore missing google-services.json in environments where it's not provided (like GitHub Actions without Firebase setup)
+tasks.withType<com.google.gms.googleservices.GoogleServicesTask>().configureEach {
+    // Custom handling if needed, or configure extension
+}
+
+googleServices {
+    missingGoogleServicesStrategy = MissingGoogleServicesStrategy.IGNORE
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
